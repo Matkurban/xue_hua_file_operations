@@ -1,5 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-  package="com.kurban.xue_hua_file_operations">
+    package="com.kurban.xue_hua_file_operations">
+
     <application>
         <provider
             android:name="androidx.core.content.FileProvider"

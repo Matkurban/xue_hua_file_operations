@@ -21,8 +21,8 @@ import io.flutter.plugin.common.MethodChannel.Result
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import androidx.core.net.toUri
 
-/** XueHuaFileOperationsPlugin */
 class XueHuaFileOperationsPlugin :
     FlutterPlugin,
     MethodCallHandler,
@@ -36,7 +36,6 @@ class XueHuaFileOperationsPlugin :
     private var pendingSaveBytes: ByteArray? = null
     private var pendingSaveSourcePath: String? = null
     private var pendingSaveFileName: String = "file"
-
     private var openDocumentLauncher: ActivityResultLauncher<Array<String>>? = null
     private var openMultipleDocumentsLauncher: ActivityResultLauncher<Array<String>>? = null
     private var openDocumentTreeLauncher: ActivityResultLauncher<Uri?>? = null
@@ -88,7 +87,7 @@ class XueHuaFileOperationsPlugin :
             result.error(
                 "unsupported",
                 "Host Activity must extend FlutterFragmentActivity (ComponentActivity) " +
-                    "to use file pickers",
+                        "to use file pickers",
                 null
             )
             return null
@@ -183,7 +182,7 @@ class XueHuaFileOperationsPlugin :
         val path = call.argument<String>("path")
         val identifier = call.argument<String>("identifier")
         val uri = when {
-            !identifier.isNullOrEmpty() -> Uri.parse(identifier)
+            !identifier.isNullOrEmpty() -> identifier.toUri()
             !path.isNullOrEmpty() -> {
                 val file = File(path)
                 if (!file.exists()) {
@@ -200,6 +199,7 @@ class XueHuaFileOperationsPlugin :
                     Uri.fromFile(file)
                 }
             }
+
             else -> {
                 result.error("invalid_args", "Either path or identifier must be provided", null)
                 return
