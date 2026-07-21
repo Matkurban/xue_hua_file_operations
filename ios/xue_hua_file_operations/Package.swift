@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "xue_hua_file_operations",
     platforms: [
-        .iOS("13.0")
+        .iOS("14.0")
     ],
     products: [
         .library(name: "xue-hua-file-operations", targets: ["xue_hua_file_operations"])

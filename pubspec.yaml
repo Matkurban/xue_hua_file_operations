@@ -1,6 +1,6 @@
 name: xue_hua_file_operations
 description: "Cross-platform Flutter plugin for file pick, save-as, and open."
-version: 0.1.0
+version: 0.1.0+1
 homepage:
 
 environment:
