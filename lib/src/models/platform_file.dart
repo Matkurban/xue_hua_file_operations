@@ -43,12 +43,12 @@ class PlatformFile {
   }
 
   Map<String, Object?> toMap() => {
-        'name': name,
-        'size': size,
-        'path': path,
-        'bytes': bytes,
-        'identifier': identifier,
-      };
+    'name': name,
+    'size': size,
+    'path': path,
+    'bytes': bytes,
+    'identifier': identifier,
+  };
 
   @override
   String toString() =>

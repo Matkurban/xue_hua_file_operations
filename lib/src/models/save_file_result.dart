@@ -1,9 +1,6 @@
 /// Result of [XueHuaFileOperations.saveFile].
 class SaveFileResult {
-  const SaveFileResult({
-    required this.name,
-    this.path,
-  });
+  const SaveFileResult({required this.name, this.path});
 
   /// Saved file name (e.g. download name on Web).
   final String name;
@@ -18,8 +15,5 @@ class SaveFileResult {
     );
   }
 
-  Map<String, Object?> toMap() => {
-        'name': name,
-        'path': path,
-      };
+  Map<String, Object?> toMap() => {'name': name, 'path': path};
 }

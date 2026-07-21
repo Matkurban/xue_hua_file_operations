@@ -51,96 +51,96 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
   }
 
   Future<void> _pickFile() => _run(() async {
-        final file = await _ops.pickFile(withData: _withData);
-        if (!mounted) return;
-        if (file == null) {
-          setState(() => _status = 'Cancelled');
-          return;
-        }
-        setState(() {
-          _files = [file];
-          _selected = file;
-          _status = 'Picked 1 file';
-        });
-      });
+    final file = await _ops.pickFile(withData: _withData);
+    if (!mounted) return;
+    if (file == null) {
+      setState(() => _status = 'Cancelled');
+      return;
+    }
+    setState(() {
+      _files = [file];
+      _selected = file;
+      _status = 'Picked 1 file';
+    });
+  });
 
   Future<void> _pickFiles() => _run(() async {
-        final files = await _ops.pickFiles(
-          withData: _withData,
-          maxFiles: _maxFiles,
-        );
-        if (!mounted) return;
-        if (files == null) {
-          setState(() => _status = 'Cancelled');
-          return;
-        }
-        setState(() {
-          _files = files;
-          _selected = files.isNotEmpty ? files.first : null;
-          _status = 'Picked ${files.length} file(s)';
-        });
-      });
+    final files = await _ops.pickFiles(
+      withData: _withData,
+      maxFiles: _maxFiles,
+    );
+    if (!mounted) return;
+    if (files == null) {
+      setState(() => _status = 'Cancelled');
+      return;
+    }
+    setState(() {
+      _files = files;
+      _selected = files.isNotEmpty ? files.first : null;
+      _status = 'Picked ${files.length} file(s)';
+    });
+  });
 
   Future<void> _pickDirectory() => _run(() async {
-        final dir = await _ops.pickDirectory();
-        if (!mounted) return;
-        if (dir == null) {
-          setState(() => _status = 'Cancelled');
-          return;
-        }
-        setState(() {
-          _directory = dir;
-          _status = 'Directory: ${dir.path}';
-        });
-      });
+    final dir = await _ops.pickDirectory();
+    if (!mounted) return;
+    if (dir == null) {
+      setState(() => _status = 'Cancelled');
+      return;
+    }
+    setState(() {
+      _directory = dir;
+      _status = 'Directory: ${dir.path}';
+    });
+  });
 
   Future<void> _saveFile() => _run(() async {
-        final source = _selected;
-        final path = source?.path;
-        final bytes = source?.bytes;
-        final Uint8List? saveBytes;
-        final String? saveSourcePath;
+    final source = _selected;
+    final path = source?.path;
+    final bytes = source?.bytes;
+    final Uint8List? saveBytes;
+    final String? saveSourcePath;
 
-        if (path != null && path.isNotEmpty) {
-          // Prefer copying from path so withData:false still saves full content.
-          saveBytes = null;
-          saveSourcePath = path;
-        } else if (bytes != null) {
-          saveBytes = bytes;
-          saveSourcePath = null;
-        } else {
-          // Demo fallback when nothing is selected.
-          saveBytes = Uint8List.fromList(
-            'Hello from XueHuaFileOperations\n'.codeUnits,
-          );
-          saveSourcePath = null;
-        }
+    if (path != null && path.isNotEmpty) {
+      // Prefer copying from path so withData:false still saves full content.
+      saveBytes = null;
+      saveSourcePath = path;
+    } else if (bytes != null) {
+      saveBytes = bytes;
+      saveSourcePath = null;
+    } else {
+      // Demo fallback when nothing is selected.
+      saveBytes = Uint8List.fromList(
+        'Hello from XueHuaFileOperations\n'.codeUnits,
+      );
+      saveSourcePath = null;
+    }
 
-        final result = await _ops.saveFile(
-          fileName: source?.name ?? 'xue_hua_export.txt',
-          bytes: saveBytes,
-          sourcePath: saveSourcePath,
-        );
-        if (!mounted) return;
-        if (result == null) {
-          setState(() => _status = 'Cancelled');
-          return;
-        }
-        setState(() {
-          _status = 'Saved: ${result.path ?? result.name}';
-        });
-      });
+    final result = await _ops.saveFile(
+      fileName: source?.name ?? 'xue_hua_export.txt',
+      bytes: saveBytes,
+      sourcePath: saveSourcePath,
+    );
+    if (!mounted) return;
+    if (result == null) {
+      setState(() => _status = 'Cancelled');
+      return;
+    }
+    setState(() {
+      _status = 'Saved: ${result.path ?? result.name}';
+    });
+  });
 
   Future<void> _openSelected() => _run(() async {
-        final file = _selected;
-        if (file == null) {
-          setState(() => _status = 'Select a file first');
-          return;
-        }
-        await _ops.openFile(path: file.path, identifier: file.identifier);
-        if (!mounted) return;
-        setState(() => _status = 'Opened ${file.name}');
-      });
+    final file = _selected;
+    if (file == null) {
+      setState(() => _status = 'Select a file first');
+      return;
+    }
+    await _ops.openFile(path: file.path, identifier: file.identifier);
+    if (!mounted) return;
+    setState(() => _status = 'Opened ${file.name}');
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -166,7 +166,10 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
             spacing: 8,
             runSpacing: 8,
             children: [
-              FilledButton(onPressed: _pickFile, child: const Text('Pick File')),
+              FilledButton(
+                onPressed: _pickFile,
+                child: const Text('Pick File'),
+              ),
               FilledButton.tonal(
                 onPressed: _pickFiles,
                 child: const Text('Pick Files'),
@@ -175,7 +178,10 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
                 onPressed: _pickDirectory,
                 child: const Text('Pick Directory'),
               ),
-              OutlinedButton(onPressed: _saveFile, child: const Text('Save As')),
+              OutlinedButton(
+                onPressed: _saveFile,
+                child: const Text('Save As'),
+              ),
               OutlinedButton(
                 onPressed: _openSelected,
                 child: const Text('Open Selected'),
@@ -193,7 +199,8 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
             const Text('No files selected')
           else
             ..._files.map((file) {
-              final selected = identical(file, _selected) ||
+              final selected =
+                  identical(file, _selected) ||
                   (file.path != null && file.path == _selected?.path) ||
                   (file.identifier != null &&
                       file.identifier == _selected?.identifier);

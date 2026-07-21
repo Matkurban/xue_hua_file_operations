@@ -101,9 +101,7 @@ class MethodChannelXueHuaFileOperations extends XueHuaFileOperationsPlatform {
   Future<DirectoryResult?> pickDirectory({String? dialogTitle}) async {
     final result = await _invoke<Map<Object?, Object?>>(
       'pickDirectory',
-      <String, Object?>{
-        'dialogTitle': ?dialogTitle,
-      },
+      <String, Object?>{'dialogTitle': ?dialogTitle},
     );
     if (result == null) return null;
     return DirectoryResult.fromMap(result);
@@ -117,28 +115,23 @@ class MethodChannelXueHuaFileOperations extends XueHuaFileOperationsPlatform {
     List<String>? allowedExtensions,
     String? dialogTitle,
   }) async {
-    final result = await _invoke<Map<Object?, Object?>>(
-      'saveFile',
-      <String, Object?>{
-        'fileName': fileName,
-        'bytes': ?bytes,
-        'sourcePath': ?sourcePath,
-        'allowedExtensions': ?allowedExtensions,
-        'dialogTitle': ?dialogTitle,
-      },
-    );
+    final result =
+        await _invoke<Map<Object?, Object?>>('saveFile', <String, Object?>{
+          'fileName': fileName,
+          'bytes': ?bytes,
+          'sourcePath': ?sourcePath,
+          'allowedExtensions': ?allowedExtensions,
+          'dialogTitle': ?dialogTitle,
+        });
     if (result == null) return null;
     return SaveFileResult.fromMap(result);
   }
 
   @override
   Future<void> openFile({String? path, String? identifier}) async {
-    await _invoke<bool>(
-      'openFile',
-      <String, Object?>{
-        'path': ?path,
-        'identifier': ?identifier,
-      },
-    );
+    await _invoke<bool>('openFile', <String, Object?>{
+      'path': ?path,
+      'identifier': ?identifier,
+    });
   }
 }

@@ -19,8 +19,8 @@ class DirectoryResult {
   }
 
   Map<String, Object?> toMap() => {
-        'path': path,
-        'name': name,
-        'identifier': identifier,
-      };
+    'path': path,
+    'name': name,
+    'identifier': identifier,
+  };
 }

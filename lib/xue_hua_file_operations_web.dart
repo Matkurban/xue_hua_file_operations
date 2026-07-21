@@ -31,9 +31,7 @@ class XueHuaFileOperationsWeb extends XueHuaFileOperationsPlatform {
       parts.addAll(allowedMimeTypes);
     }
     if (allowedExtensions != null) {
-      parts.addAll(
-        allowedExtensions.map((e) => e.startsWith('.') ? e : '.$e'),
-      );
+      parts.addAll(allowedExtensions.map((e) => e.startsWith('.') ? e : '.$e'));
     }
     if (parts.isNotEmpty) return parts.join(',');
 
@@ -186,11 +184,7 @@ class XueHuaFileOperationsWeb extends XueHuaFileOperationsPlatform {
     final name = relative.contains('/')
         ? relative.split('/').first
         : 'selected';
-    return DirectoryResult(
-      path: name,
-      name: name,
-      identifier: name,
-    );
+    return DirectoryResult(path: name, name: name, identifier: name);
   }
 
   @override

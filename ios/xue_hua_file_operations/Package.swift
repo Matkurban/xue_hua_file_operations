@@ -6,19 +6,19 @@ import PackageDescription
 let package = Package(
     name: "xue_hua_file_operations",
     platforms: [
-        .iOS("14.0")
+        .iOS("14.0"),
     ],
     products: [
-        .library(name: "xue-hua-file-operations", targets: ["xue_hua_file_operations"])
+        .library(name: "xue-hua-file-operations", targets: ["xue_hua_file_operations"]),
     ],
     dependencies: [
-        .package(name: "FlutterFramework", path: "../FlutterFramework")
+        .package(name: "FlutterFramework", path: "../FlutterFramework"),
     ],
     targets: [
         .target(
             name: "xue_hua_file_operations",
             dependencies: [
-                .product(name: "FlutterFramework", package: "FlutterFramework")
+                .product(name: "FlutterFramework", package: "FlutterFramework"),
             ],
             resources: [
                 // If your plugin requires a privacy manifest, for example if it uses any required
@@ -31,6 +31,6 @@ let package = Package(
                 // the following instructions to add them:
                 // https://developer.apple.com/documentation/xcode/bundling-resources-with-a-swift-package
             ]
-        )
+        ),
     ]
 )

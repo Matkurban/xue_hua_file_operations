@@ -20,17 +20,17 @@ void main() {
     late MethodCall captured;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
-      captured = methodCall;
-      return {
-        'file': {
-          'name': 'a.txt',
-          'size': 1,
-          'path': '/tmp/a.txt',
-          'bytes': null,
-          'identifier': 'file:///tmp/a.txt',
-        },
-      };
-    });
+          captured = methodCall;
+          return {
+            'file': {
+              'name': 'a.txt',
+              'size': 1,
+              'path': '/tmp/a.txt',
+              'bytes': null,
+              'identifier': 'file:///tmp/a.txt',
+            },
+          };
+        });
 
     final file = await platform.pickFile(
       withData: true,
@@ -58,26 +58,26 @@ void main() {
     late MethodCall captured;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
-      captured = methodCall;
-      return {
-        'files': [
-          {
-            'name': 'a.txt',
-            'size': 1,
-            'path': '/tmp/a.txt',
-            'bytes': null,
-            'identifier': 'id-a',
-          },
-          {
-            'name': 'b.txt',
-            'size': 2,
-            'path': '/tmp/b.txt',
-            'bytes': Uint8List.fromList([1, 2]),
-            'identifier': 'id-b',
-          },
-        ],
-      };
-    });
+          captured = methodCall;
+          return {
+            'files': [
+              {
+                'name': 'a.txt',
+                'size': 1,
+                'path': '/tmp/a.txt',
+                'bytes': null,
+                'identifier': 'id-a',
+              },
+              {
+                'name': 'b.txt',
+                'size': 2,
+                'path': '/tmp/b.txt',
+                'bytes': Uint8List.fromList([1, 2]),
+                'identifier': 'id-b',
+              },
+            ],
+          };
+        });
 
     final files = await platform.pickFiles(maxFiles: 3, withData: false);
     expect(captured.method, 'pickFiles');
@@ -90,12 +90,12 @@ void main() {
   test('pickFiles maps PlatformException to FileOperationsException', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
-      throw PlatformException(
-        code: 'too_many_files',
-        message: 'too many',
-        details: {'selected': 5, 'maxFiles': 2},
-      );
-    });
+          throw PlatformException(
+            code: 'too_many_files',
+            message: 'too many',
+            details: {'selected': 5, 'maxFiles': 2},
+          );
+        });
 
     expect(
       () => platform.pickFiles(maxFiles: 2),
@@ -113,13 +113,13 @@ void main() {
     late MethodCall captured;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
-      captured = methodCall;
-      return {
-        'path': '/tmp/dir',
-        'name': 'dir',
-        'identifier': 'file:///tmp/dir',
-      };
-    });
+          captured = methodCall;
+          return {
+            'path': '/tmp/dir',
+            'name': 'dir',
+            'identifier': 'file:///tmp/dir',
+          };
+        });
 
     final dir = await platform.pickDirectory(dialogTitle: 'Folders');
     expect(captured.method, 'pickDirectory');
@@ -134,12 +134,9 @@ void main() {
     final bytes = Uint8List.fromList([9, 8, 7]);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
-      captured = methodCall;
-      return {
-        'path': '/tmp/out.bin',
-        'name': 'out.bin',
-      };
-    });
+          captured = methodCall;
+          return {'path': '/tmp/out.bin', 'name': 'out.bin'};
+        });
 
     final saved = await platform.saveFile(
       fileName: 'out.bin',
@@ -164,9 +161,9 @@ void main() {
     late MethodCall captured;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
-      captured = methodCall;
-      return true;
-    });
+          captured = methodCall;
+          return true;
+        });
 
     await platform.openFile(path: '/tmp/a.txt', identifier: 'id-a');
     expect(captured.method, 'openFile');
@@ -178,15 +175,12 @@ void main() {
   test('cancel returns null', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
-      return null;
-    });
+          return null;
+        });
 
     expect(await platform.pickFile(), isNull);
     expect(await platform.pickFiles(), isNull);
     expect(await platform.pickDirectory(), isNull);
-    expect(
-      await platform.saveFile(fileName: 'x', bytes: Uint8List(0)),
-      isNull,
-    );
+    expect(await platform.saveFile(fileName: 'x', bytes: Uint8List(0)), isNull);
   });
 }
