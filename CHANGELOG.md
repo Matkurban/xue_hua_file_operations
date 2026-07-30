@@ -1,3 +1,10 @@
+## 1.0.1
+
+* Fix `openFile` failure on Android 11+ (API Level 30/31+) by adding `<queries>` declarations for `ACTION_VIEW` in plugin `AndroidManifest.xml`.
+* Optimize Android `openFile` logic to prioritize local `FileProvider` URIs for picked files.
+* Improve MIME type inference from file extensions when ContentResolver returns null or generic MIME types.
+* Add `Intent.createChooser` and fallback mechanism for opening files across all Android versions.
+
 ## 1.0.0
 
 * Initial stable release.

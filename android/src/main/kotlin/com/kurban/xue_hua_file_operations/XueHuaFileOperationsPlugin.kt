@@ -1,5 +1,6 @@
 package com.kurban.xue_hua_file_operations
 
+import android.content.ActivityNotFoundException
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -181,40 +182,121 @@ class XueHuaFileOperationsPlugin :
         }
         val path = call.argument<String>("path")
         val identifier = call.argument<String>("identifier")
-        val uri = when {
-            !identifier.isNullOrEmpty() -> identifier.toUri()
+
+        var targetFile: File? = null
+        if (!path.isNullOrEmpty()) {
+            val file = File(path)
+            if (file.exists()) {
+                targetFile = file
+            }
+        }
+
+        if (targetFile == null && !identifier.isNullOrEmpty()) {
+            if (identifier.startsWith("file://")) {
+                val uri = identifier.toUri()
+                val pathFromUri = uri.path
+                if (!pathFromUri.isNullOrEmpty()) {
+                    val file = File(pathFromUri)
+                    if (file.exists()) {
+                        targetFile = file
+                    }
+                }
+            } else if (!identifier.contains("://")) {
+                val file = File(identifier)
+                if (file.exists()) {
+                    targetFile = file
+                }
+            }
+        }
+
+        val uri: Uri = when {
+            targetFile != null -> {
+                try {
+                    FileProvider.getUriForFile(
+                        act,
+                        "${act.packageName}.xue_hua_file_operations.fileprovider",
+                        targetFile
+                    )
+                } catch (_: Exception) {
+                    Uri.fromFile(targetFile)
+                }
+            }
+            !identifier.isNullOrEmpty() -> {
+                identifier.toUri()
+            }
             !path.isNullOrEmpty() -> {
                 val file = File(path)
                 if (!file.exists()) {
                     result.error("not_found", "File not found: $path", null)
                     return
                 }
-                try {
-                    FileProvider.getUriForFile(
-                        act,
-                        "${act.packageName}.xue_hua_file_operations.fileprovider",
-                        file
-                    )
-                } catch (_: Exception) {
-                    Uri.fromFile(file)
-                }
+                Uri.fromFile(file)
             }
-
             else -> {
                 result.error("invalid_args", "Either path or identifier must be provided", null)
                 return
             }
         }
 
-        val mime = act.contentResolver.getType(uri) ?: "*/*"
+        var mime: String? = null
+        try {
+            mime = act.contentResolver.getType(uri)
+        } catch (_: Exception) {
+        }
+
+        if (mime.isNullOrEmpty() || mime == "*/*" || mime == "application/octet-stream") {
+            val name = targetFile?.name
+                ?: path?.substringAfterLast('/')
+                ?: uri.lastPathSegment?.substringAfterLast('/')
+                ?: ""
+            val ext = name.substringAfterLast('.', "").lowercase()
+            if (ext.isNotEmpty()) {
+                val guessed = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
+                if (!guessed.isNullOrEmpty()) {
+                    mime = guessed
+                }
+            }
+        }
+
+        val finalMime = mime.takeIf { !it.isNullOrEmpty() } ?: "*/*"
+
         val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, mime)
+            setDataAndType(uri, finalMime)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
+
+        val chooser = Intent.createChooser(intent, null).apply {
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
         try {
-            act.startActivity(intent)
+            act.startActivity(chooser)
             result.success(true)
+        } catch (e: ActivityNotFoundException) {
+            if (finalMime != "*/*") {
+                try {
+                    val fallbackIntent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, "*/*")
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    val fallbackChooser = Intent.createChooser(fallbackIntent, null).apply {
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    act.startActivity(fallbackChooser)
+                    result.success(true)
+                    return
+                } catch (_: Exception) {
+                }
+            }
+            result.error("io_error", "Unable to open file: ${e.message}", null)
         } catch (e: Exception) {
             result.error("io_error", "Unable to open file: ${e.message}", null)
         }

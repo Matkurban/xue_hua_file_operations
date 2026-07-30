@@ -22,7 +22,7 @@ Add the dependency to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  xue_hua_file_operations: ^1.0.0
+  xue_hua_file_operations: ^1.0.1
 ```
 
 Then run:

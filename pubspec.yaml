@@ -1,6 +1,6 @@
 name: xue_hua_file_operations
 description: "Cross-platform Flutter plugin for picking files/directories, save-as, and opening files with the system default app."
-version: 1.0.0
+version: 1.0.1
 homepage: https://github.com/Matkurban/xue_hua_file_operations
 repository: https://github.com/Matkurban/xue_hua_file_operations
 topics:

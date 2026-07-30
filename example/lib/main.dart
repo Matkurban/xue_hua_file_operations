@@ -149,7 +149,7 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text(_status, style: Theme.of(context).textTheme.titleMedium),
+          SelectableText(_status, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
           SwitchListTile(
             title: const Text('withData'),
