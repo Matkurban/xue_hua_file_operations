@@ -137,7 +137,8 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
       setState(() => _status = 'Select a file first');
       return;
     }
-    await _ops.openFile(path: file.path, identifier: file.identifier);
+    // await _ops.openFile(path: file.path, identifier: file.identifier);
+    await _ops.openFile(path: file.path);
     if (!mounted) return;
     setState(() => _status = 'Opened ${file.name}');
   });
@@ -149,7 +150,10 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          SelectableText(_status, style: Theme.of(context).textTheme.titleMedium),
+          SelectableText(
+            _status,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const SizedBox(height: 12),
           SwitchListTile(
             title: const Text('withData'),

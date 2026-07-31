@@ -19,7 +19,7 @@
 
     <application>
         <provider
-            android:name="androidx.core.content.FileProvider"
+            android:name="com.kurban.xue_hua_file_operations.XueHuaFileOperationsFileProvider"
             android:authorities="${applicationId}.xue_hua_file_operations.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true">

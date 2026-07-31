@@ -1,3 +1,11 @@
+## 1.0.2
+
+* Fix Android `FileUriExposedException` when opening files via `openFile` (`exposed beyond app through ClipData.Item.getUri()`).
+* Stop falling back to `file://` URIs when `FileProvider.getUriForFile` fails; surface the real error instead.
+* Normalize `file://` identifiers to local `File` paths and share them through `FileProvider` `content://` URIs.
+* Set `ClipData` on the view chooser Intent and grant read-only URI permission for more reliable cross-app opens.
+* Register a dedicated `XueHuaFileOperationsFileProvider` subclass instead of `androidx.core.content.FileProvider`, avoiding manifest collisions with the host app or other plugins that previously caused `Couldn't find meta-data for provider with authority`.
+
 ## 1.0.1
 
 * Fix `openFile` failure on Android 11+ (API Level 30/31+) by adding `<queries>` declarations for `ACTION_VIEW` in plugin `AndroidManifest.xml`.
