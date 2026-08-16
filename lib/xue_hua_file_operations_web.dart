@@ -190,6 +190,70 @@ class XueHuaFileOperationsWeb extends XueHuaFileOperationsPlatform {
     return DirectoryResult(path: name, name: name, identifier: name);
   }
 
+  void _downloadBytes(String fileName, Uint8List bytes, {String? mime}) {
+    final blob = mime == null || mime.isEmpty
+        ? web.Blob([bytes.toJS].toJS)
+        : web.Blob([bytes.toJS].toJS, web.BlobPropertyBag(type: mime));
+    final url = web.URL.createObjectURL(blob);
+    final anchor = web.HTMLAnchorElement()
+      ..href = url
+      ..download = fileName
+      ..style.display = 'none';
+    web.document.body?.append(anchor);
+    anchor.click();
+    anchor.remove();
+    web.URL.revokeObjectURL(url);
+  }
+
+  String _mimeForGallery(String fileName, GalleryMediaType type) {
+    final dot = fileName.lastIndexOf('.');
+    if (dot >= 0 && dot < fileName.length - 1) {
+      switch (fileName.substring(dot + 1).toLowerCase()) {
+        case 'jpg':
+        case 'jpeg':
+          return 'image/jpeg';
+        case 'png':
+          return 'image/png';
+        case 'gif':
+          return 'image/gif';
+        case 'webp':
+          return 'image/webp';
+        case 'bmp':
+          return 'image/bmp';
+        case 'tif':
+        case 'tiff':
+          return 'image/tiff';
+        case 'heic':
+          return 'image/heic';
+        case 'heif':
+          return 'image/heif';
+        case 'avif':
+          return 'image/avif';
+        case 'ico':
+          return 'image/x-icon';
+        case 'mp4':
+          return 'video/mp4';
+        case 'mov':
+        case 'm4v':
+          return 'video/quicktime';
+        case 'webm':
+          return 'video/webm';
+        case 'avi':
+          return 'video/x-msvideo';
+        case 'mkv':
+          return 'video/x-matroska';
+        case 'mpeg':
+        case 'mpg':
+          return 'video/mpeg';
+        case '3gp':
+          return 'video/3gpp';
+        case '3g2':
+          return 'video/3gpp2';
+      }
+    }
+    return type == GalleryMediaType.video ? 'video/mp4' : 'image/jpeg';
+  }
+
   @override
   Future<SaveFileResult?> saveFile({
     required String fileName,
@@ -205,17 +269,7 @@ class XueHuaFileOperationsWeb extends XueHuaFileOperationsPlatform {
       );
     }
 
-    final blob = web.Blob([bytes.toJS].toJS);
-    final url = web.URL.createObjectURL(blob);
-    final anchor = web.HTMLAnchorElement()
-      ..href = url
-      ..download = fileName
-      ..style.display = 'none';
-    web.document.body?.append(anchor);
-    anchor.click();
-    anchor.remove();
-    web.URL.revokeObjectURL(url);
-
+    _downloadBytes(fileName, bytes);
     return SaveFileResult(name: fileName, path: null);
   }
 
@@ -226,29 +280,32 @@ class XueHuaFileOperationsWeb extends XueHuaFileOperationsPlatform {
     String? sourcePath,
     required GalleryMediaType type,
     String? albumName,
-  }) {
-    throw FileOperationsException(
-      ErrorCode.unsupported,
-      message: 'saveToGallery is not supported on Web',
-    );
-  }
+  }) async {
+    if (bytes == null) {
+      throw FileOperationsException(
+        ErrorCode.unsupported,
+        message:
+            'Web saveToGallery requires bytes; sourcePath is not supported',
+      );
+    }
 
-  Never _unsupportedGalleryPermission() {
-    throw FileOperationsException(
-      ErrorCode.unsupported,
-      message: 'Gallery permission is not supported on Web',
-    );
+    _downloadBytes(fileName, bytes, mime: _mimeForGallery(fileName, type));
+    return SaveToGalleryResult(name: fileName);
   }
 
   @override
   Future<GalleryPermissionStatus> galleryPermissionStatus({
     bool forAlbum = false,
-  }) => _unsupportedGalleryPermission();
+  }) async {
+    return GalleryPermissionStatus.granted;
+  }
 
   @override
   Future<GalleryPermissionStatus> requestGalleryPermission({
     bool forAlbum = false,
-  }) => _unsupportedGalleryPermission();
+  }) async {
+    return GalleryPermissionStatus.granted;
+  }
 
   @override
   Future<void> openFile({String? path, String? identifier}) async {

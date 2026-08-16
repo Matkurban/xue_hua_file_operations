@@ -109,7 +109,8 @@ class XueHuaFileOperations {
   /// Save an image or video to the system gallery / Pictures folder.
   ///
   /// At least one of [bytes] / [sourcePath] is required. [type] is inferred
-  /// from [fileName] (or [sourcePath]) when omitted. Web is unsupported.
+  /// from [fileName] (or [sourcePath]) when omitted. On Web this triggers a
+  /// browser download (`bytes` required).
   Future<SaveToGalleryResult> saveToGallery({
     required String fileName,
     Uint8List? bytes,
@@ -148,7 +149,7 @@ class XueHuaFileOperations {
   /// Current gallery permission without showing a system prompt.
   ///
   /// Pass [forAlbum] `true` when you will call [saveToGallery] with an
-  /// [albumName]. Web throws [ErrorCode.unsupported].
+  /// [albumName]. On Web this always returns [GalleryPermissionStatus.granted].
   Future<GalleryPermissionStatus> galleryPermissionStatus({
     bool forAlbum = false,
   }) {
@@ -159,7 +160,8 @@ class XueHuaFileOperations {
   ///
   /// Returns the new [GalleryPermissionStatus]. Denial is a status, not an
   /// exception. Pass [forAlbum] `true` when you need read access to create or
-  /// look up a custom album. Web throws [ErrorCode.unsupported].
+  /// look up a custom album. On Web this always returns
+  /// [GalleryPermissionStatus.granted].
   Future<GalleryPermissionStatus> requestGalleryPermission({
     bool forAlbum = false,
   }) {

@@ -24,7 +24,7 @@
 
 ```yaml
 dependencies:
-  xue_hua_file_operations: ^1.1.0
+  xue_hua_file_operations: ^1.1.1
 ```
 
 然后执行：
@@ -42,7 +42,7 @@ flutter pub get
 | macOS | 是 | 原生 `NSOpenPanel` / `NSSavePanel`；`saveToGallery` 使用 PhotoKit |
 | Windows | 是 | 原生文件 / 文件夹对话框；`saveToGallery` 写入 Pictures / Videos |
 | Linux | 是 | 原生文件 / 文件夹对话框；`saveToGallery` 写入 XDG Pictures / Videos |
-| Web | 是 | HTML `<input type="file">` 与 Blob 下载；`saveToGallery` 不支持 |
+| Web | 是 | HTML `<input type="file">` 与 Blob 下载；`saveToGallery` 触发浏览器下载 |
 
 ### `path` 与 `identifier` 行为
 
@@ -141,7 +141,8 @@ class MainActivity : FlutterFragmentActivity()
 - `path` 始终为 `null`
 - 选中的文件始终包含 `bytes`
 - `saveFile` 必须提供 `bytes`（不支持 `sourcePath`）
-- `saveToGallery` 不支持（`ErrorCode.unsupported`）
+- `saveToGallery` 触发浏览器下载（必须提供 `bytes`；忽略 `albumName`）
+- `galleryPermissionStatus` / `requestGalleryPermission` 始终返回 `granted`
 - `openFile` 必须提供 object URL 形式的 `identifier`（例如来自先前选择）；不支持本地文件系统路径
 
 ## 快速开始
@@ -292,7 +293,7 @@ Future<SaveFileResult?> saveFile({
 
 ### `saveToGallery`
 
-将图片或视频保存到系统图库（桌面端为 Pictures/Videos）。没有取消对话框；失败会抛出异常。
+将图片或视频保存到系统图库（桌面端为 Pictures/Videos）。在 Web 上会触发浏览器下载。没有取消对话框；失败会抛出异常。
 
 ```dart
 Future<SaveToGalleryResult> saveToGallery({
@@ -318,7 +319,7 @@ Future<SaveToGalleryResult> saveToGallery({
 
 - 若 `bytes` 与 `sourcePath` 均缺失，或无法推断媒体类型，抛出 `ErrorCode.invalidArgs`
 - 图库 / 存储权限被拒绝时抛出 `ErrorCode.permissionDenied`
-- 在 Web 上抛出 `ErrorCode.unsupported`
+- 在 Web 上若 `bytes` 为 null（例如只提供了 `sourcePath`），抛出 `ErrorCode.unsupported`
 - I/O 失败时抛出 `ErrorCode.notFound` / `ErrorCode.ioError`
 
 ### `galleryPermissionStatus` / `requestGalleryPermission`
@@ -347,7 +348,7 @@ Future<GalleryPermissionStatus> requestGalleryPermission({bool forAlbum = false}
 | Android 24–28 | `WRITE_EXTERNAL_STORAGE` |
 | Android 29+ | 始终 `granted`（不申请 `READ_MEDIA_*`） |
 | Windows / Linux | 始终 `granted` |
-| Web | 抛出 `ErrorCode.unsupported` |
+| Web | 始终 `granted` |
 
 ### `openFile`
 

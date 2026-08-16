@@ -24,7 +24,7 @@ Add the dependency to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  xue_hua_file_operations: ^1.1.0
+  xue_hua_file_operations: ^1.1.1
 ```
 
 Then run:
@@ -42,7 +42,7 @@ flutter pub get
 | macOS | Yes | Native `NSOpenPanel` / `NSSavePanel`; `saveToGallery` uses PhotoKit |
 | Windows | Yes | Native file / folder dialogs; `saveToGallery` writes Pictures / Videos |
 | Linux | Yes | Native file / folder dialogs; `saveToGallery` writes XDG Pictures / Videos |
-| Web | Yes | HTML `<input type="file">` and Blob download; `saveToGallery` is unsupported |
+| Web | Yes | HTML `<input type="file">` and Blob download; `saveToGallery` downloads the file |
 
 ### Path and identifier behavior
 
@@ -141,7 +141,8 @@ See the example app entitlements under `example/macos/Runner/`.
 - `path` is always `null`
 - Picked files always include `bytes`
 - `saveFile` requires `bytes` (`sourcePath` is not supported)
-- `saveToGallery` is not supported (`ErrorCode.unsupported`)
+- `saveToGallery` triggers a browser download (`bytes` required; `albumName` is ignored)
+- `galleryPermissionStatus` / `requestGalleryPermission` always return `granted`
 - `openFile` requires an object-URL `identifier` (for example from a previous pick); local filesystem paths are not supported
 
 ## Quick start
@@ -292,7 +293,7 @@ Future<SaveFileResult?> saveFile({
 
 ### `saveToGallery`
 
-Save an image or video to the system gallery (or Pictures/Videos on desktop). There is no cancel dialog; failures throw.
+Save an image or video to the system gallery (or Pictures/Videos on desktop). On Web this triggers a browser download. There is no cancel dialog; failures throw.
 
 ```dart
 Future<SaveToGalleryResult> saveToGallery({
@@ -318,7 +319,7 @@ Future<SaveToGalleryResult> saveToGallery({
 
 - `ErrorCode.invalidArgs` if both `bytes` and `sourcePath` are missing, or the media type cannot be inferred
 - `ErrorCode.permissionDenied` if gallery / storage permission is denied
-- `ErrorCode.unsupported` on Web
+- `ErrorCode.unsupported` on Web when `bytes` is null (e.g. only `sourcePath` provided)
 - `ErrorCode.notFound` / `ErrorCode.ioError` on I/O failures
 
 ### `galleryPermissionStatus` / `requestGalleryPermission`
@@ -347,7 +348,7 @@ Saving without a custom album is allowed when `status.isGranted || status.isLimi
 | Android 24–28 | `WRITE_EXTERNAL_STORAGE` |
 | Android 29+ | Always `granted` (no `READ_MEDIA_*`) |
 | Windows / Linux | Always `granted` |
-| Web | Throws `ErrorCode.unsupported` |
+| Web | Always `granted` |
 
 ### `openFile`
 

@@ -1,3 +1,8 @@
+## 1.1.1
+
+* Web: `saveToGallery` triggers a browser download instead of throwing `unsupported`.
+* Web: `galleryPermissionStatus` / `requestGalleryPermission` return `granted`.
+
 ## 1.1.0
 
 * Add `saveToGallery` to save images and videos to the system gallery (Android, iOS, macOS, Windows, Linux).
