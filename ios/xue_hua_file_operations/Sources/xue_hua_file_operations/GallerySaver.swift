@@ -40,12 +40,29 @@ enum GallerySaver {
             )
             requestAccess(accessLevel) { status in
                 switch status {
-                case .authorized, .limited:
+                case .authorized:
+                    let existingAlbum: PHAssetCollection?
+                    if wantsAlbum, let albumName = albumName {
+                        existingAlbum = fetchAlbum(named: albumName)
+                    } else {
+                        existingAlbum = nil
+                    }
                     performSave(
                         fileURL: fileURL,
                         createdTemp: fileURL.path != sourcePath,
                         isVideo: isVideo,
                         albumName: wantsAlbum ? albumName : nil,
+                        existingAlbum: existingAlbum,
+                        result: result
+                    )
+                case .limited:
+                    // Limited Photos Library cannot fetch or create user albums.
+                    performSave(
+                        fileURL: fileURL,
+                        createdTemp: fileURL.path != sourcePath,
+                        isVideo: isVideo,
+                        albumName: nil,
+                        existingAlbum: nil,
                         result: result
                     )
                 default:
@@ -106,11 +123,28 @@ enum GallerySaver {
         )
     }
 
+    private static func fetchAlbum(named albumName: String) -> PHAssetCollection? {
+        let collections = PHAssetCollection.fetchAssetCollections(
+            with: .album,
+            subtype: .any,
+            options: nil
+        )
+        var existing: PHAssetCollection?
+        collections.enumerateObjects { collection, _, stop in
+            if collection.localizedTitle == albumName {
+                existing = collection
+                stop.pointee = true
+            }
+        }
+        return existing
+    }
+
     private static func performSave(
         fileURL: URL,
         createdTemp: Bool,
         isVideo: Bool,
         albumName: String?,
+        existingAlbum: PHAssetCollection?,
         result: @escaping FlutterResult
     ) {
         var localIdentifier: String?
@@ -128,7 +162,7 @@ enum GallerySaver {
             }
             localIdentifier = placeholder.localIdentifier
             if let albumName = albumName {
-                add(placeholder, toAlbumNamed: albumName)
+                add(placeholder, toAlbumNamed: albumName, existingAlbum: existingAlbum)
             }
         }, completionHandler: { success, error in
             if createdTemp {
@@ -160,21 +194,13 @@ enum GallerySaver {
         })
     }
 
-    private static func add(_ placeholder: PHObjectPlaceholder, toAlbumNamed albumName: String) {
-        let collections = PHAssetCollection.fetchAssetCollections(
-            with: .album,
-            subtype: .any,
-            options: nil
-        )
-        var existing: PHAssetCollection?
-        collections.enumerateObjects { collection, _, stop in
-            if collection.localizedTitle == albumName {
-                existing = collection
-                stop.pointee = true
-            }
-        }
-        if let existing = existing,
-           let albumChange = PHAssetCollectionChangeRequest(for: existing)
+    private static func add(
+        _ placeholder: PHObjectPlaceholder,
+        toAlbumNamed albumName: String,
+        existingAlbum: PHAssetCollection?
+    ) {
+        if let existingAlbum = existingAlbum,
+           let albumChange = PHAssetCollectionChangeRequest(for: existingAlbum)
         {
             albumChange.addAssets([placeholder] as NSArray)
         } else {

@@ -82,7 +82,6 @@ internal class GallerySaver(private val context: Context) {
             put(MediaStore.MediaColumns.IS_PENDING, 1)
             put(MediaStore.MediaColumns.DATE_ADDED, now / 1000)
             put(MediaStore.MediaColumns.DATE_MODIFIED, now / 1000)
-            put(MediaStore.MediaColumns.DATE_TAKEN, now)
         }
 
         val uri = resolver.insert(collection, values)
