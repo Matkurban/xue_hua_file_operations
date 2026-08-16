@@ -1,10 +1,6 @@
 /// Result of [XueHuaFileOperations.saveToGallery].
 class SaveToGalleryResult {
-  const SaveToGalleryResult({
-    required this.name,
-    this.path,
-    this.identifier,
-  });
+  const SaveToGalleryResult({required this.name, this.path, this.identifier});
 
   /// Final file name in the gallery / Pictures folder.
   final String name;

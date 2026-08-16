@@ -124,9 +124,7 @@ class XueHuaFileOperations {
     final resolvedType =
         type ??
         GalleryMediaType.fromFileName(fileName) ??
-        (sourcePath != null
-            ? GalleryMediaType.fromFileName(sourcePath)
-            : null);
+        (sourcePath != null ? GalleryMediaType.fromFileName(sourcePath) : null);
     if (resolvedType == null) {
       throw FileOperationsException(
         ErrorCode.invalidArgs,

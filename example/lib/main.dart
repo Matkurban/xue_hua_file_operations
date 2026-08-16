@@ -148,9 +148,7 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
       saveBytes = bytes;
       saveSourcePath = null;
     } else {
-      setState(
-        () => _status = 'Selected file has no path or bytes to save',
-      );
+      setState(() => _status = 'Selected file has no path or bytes to save');
       return;
     }
 
@@ -161,8 +159,7 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
     );
     if (!mounted) return;
     setState(() {
-      _status =
-          'Gallery: ${result.path ?? result.identifier ?? result.name}';
+      _status = 'Gallery: ${result.path ?? result.identifier ?? result.name}';
     });
   });
 

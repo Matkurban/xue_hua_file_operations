@@ -137,16 +137,14 @@ class MethodChannelXueHuaFileOperations extends XueHuaFileOperationsPlatform {
     required GalleryMediaType type,
     String? albumName,
   }) async {
-    final result = await _invoke<Map<Object?, Object?>>(
-      'saveToGallery',
-      <String, Object?>{
-        'fileName': fileName,
-        'bytes': ?bytes,
-        'sourcePath': ?sourcePath,
-        'type': type.wireName,
-        'albumName': ?albumName,
-      },
-    );
+    final result =
+        await _invoke<Map<Object?, Object?>>('saveToGallery', <String, Object?>{
+          'fileName': fileName,
+          'bytes': ?bytes,
+          'sourcePath': ?sourcePath,
+          'type': type.wireName,
+          'albumName': ?albumName,
+        });
     if (result == null) {
       throw FileOperationsException(
         ErrorCode.unknown,
