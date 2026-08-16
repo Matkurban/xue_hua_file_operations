@@ -448,6 +448,21 @@ void OpenFile(const EncodableMap *args,
   result->Success(EncodableValue(true));
 }
 
+void OpenAppSettings(
+    std::unique_ptr<flutter::MethodResult<EncodableValue>> result) {
+  HINSTANCE hi = ShellExecuteW(nullptr, L"open", L"ms-settings:privacy-pictures",
+                               nullptr, nullptr, SW_SHOWNORMAL);
+  if (reinterpret_cast<intptr_t>(hi) <= 32) {
+    hi = ShellExecuteW(nullptr, L"open", L"ms-settings:appsfeatures", nullptr,
+                       nullptr, SW_SHOWNORMAL);
+  }
+  if (reinterpret_cast<intptr_t>(hi) <= 32) {
+    result->Error("unsupported", "Unable to open Windows Settings");
+    return;
+  }
+  result->Success(EncodableValue(true));
+}
+
 std::filesystem::path UniqueDestPath(const std::filesystem::path &dir,
                                      const std::wstring &file_name) {
   std::filesystem::path dest = dir / file_name;
@@ -605,6 +620,8 @@ void XueHuaFileOperationsPlugin::HandleMethodCall(
     result->Success(flutter::EncodableValue(std::string("granted")));
   } else if (method == "openFile") {
     OpenFile(args, std::move(result));
+  } else if (method == "openAppSettings") {
+    OpenAppSettings(std::move(result));
   } else {
     result->NotImplemented();
   }

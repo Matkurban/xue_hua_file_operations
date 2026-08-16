@@ -186,4 +186,9 @@ class MethodChannelXueHuaFileOperations extends XueHuaFileOperationsPlatform {
       'identifier': ?identifier,
     });
   }
+
+  @override
+  Future<void> openAppSettings() async {
+    await _invoke<bool>('openAppSettings');
+  }
 }

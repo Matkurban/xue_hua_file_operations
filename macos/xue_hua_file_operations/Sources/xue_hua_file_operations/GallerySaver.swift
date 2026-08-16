@@ -3,11 +3,11 @@ import Photos
 
 enum GallerySaver {
     static func permissionStatus(call: FlutterMethodCall, result: @escaping FlutterResult) {
-        result(wireName(for: PHPhotoLibrary.authorizationStatus(for: .readWrite)))
+        result(wireName(for: PHPhotoLibrary.authorizationStatus(for: accessLevel(from: call))))
     }
 
     static func requestPermission(call: FlutterMethodCall, result: @escaping FlutterResult) {
-        requestAccess(.readWrite) { status in
+        requestAccess(accessLevel(from: call)) { status in
             result(wireName(for: status))
         }
     }
@@ -47,8 +47,8 @@ enum GallerySaver {
                 bytes: flutterData?.data,
                 sourcePath: sourcePath
             )
-            // macOS Photos has no add-only toggle; always request readWrite.
-            requestAccess(.readWrite) { status in
+            let accessLevel: PHAccessLevel = wantsAlbum ? .readWrite : .addOnly
+            requestAccess(accessLevel) { status in
                 switch status {
                 case .authorized:
                     let existingAlbum: PHAssetCollection?
@@ -103,6 +103,11 @@ enum GallerySaver {
         }
     }
 
+    private static func accessLevel(from call: FlutterMethodCall) -> PHAccessLevel {
+        let forAlbum = (call.arguments as? [String: Any])?["forAlbum"] as? Bool ?? false
+        return forAlbum ? .readWrite : .addOnly
+    }
+
     private static func wireName(for status: PHAuthorizationStatus) -> String {
         switch status {
         case .authorized:
@@ -124,12 +129,19 @@ enum GallerySaver {
         _ level: PHAccessLevel,
         completion: @escaping (PHAuthorizationStatus) -> Void
     ) {
-        let apply = {
-            PHPhotoLibrary.requestAuthorization(for: level) { newStatus in
-                DispatchQueue.main.async {
-                    completion(newStatus)
-                }
+        let finish: (PHAuthorizationStatus) -> Void = { status in
+            DispatchQueue.main.async {
+                completion(status)
             }
+        }
+        let apply = {
+            let current = PHPhotoLibrary.authorizationStatus(for: level)
+            // Apple only shows the system prompt while status is notDetermined.
+            if current != .notDetermined {
+                finish(current)
+                return
+            }
+            PHPhotoLibrary.requestAuthorization(for: level, handler: finish)
         }
         if Thread.isMainThread {
             apply()

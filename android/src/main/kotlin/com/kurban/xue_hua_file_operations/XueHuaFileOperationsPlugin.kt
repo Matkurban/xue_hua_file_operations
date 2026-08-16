@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
+import android.provider.Settings
 import android.webkit.MimeTypeMap
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
@@ -96,6 +97,7 @@ class XueHuaFileOperationsPlugin :
             "galleryPermissionStatus" -> result.success(galleryPermissionWireName())
             "requestGalleryPermission" -> requestGalleryPermission(result)
             "openFile" -> openFile(call, result)
+            "openAppSettings" -> openAppSettings(result)
             else -> result.notImplemented()
         }
     }
@@ -384,6 +386,24 @@ class XueHuaFileOperationsPlugin :
             MimeTypeMap.getSingleton().getMimeTypeFromExtension(first)?.let { return it }
         }
         return "application/octet-stream"
+    }
+
+    private fun openAppSettings(result: Result) {
+        val context = activity ?: applicationContext
+        if (context == null) {
+            result.error("unknown", "Context is not available", null)
+            return
+        }
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", context.packageName, null)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            context.startActivity(intent)
+            result.success(true)
+        } catch (_: ActivityNotFoundException) {
+            result.error("unsupported", "Unable to open application settings", null)
+        }
     }
 
     private fun openFile(call: MethodCall, result: Result) {

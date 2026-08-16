@@ -1,3 +1,9 @@
+## 1.2.0
+
+* iOS / macOS: call `PHPhotoLibrary.requestAuthorization` only while status is `notDetermined`; already-denied access returns `permanentlyDenied` without a second system dialog.
+* macOS gallery permission now uses PhotoKit `addOnly` or `readWrite` from `forAlbum` / `albumName`, matching iOS.
+* Add `openAppSettings()` to open the app or Photos privacy settings after `permanentlyDenied` / `restricted`.
+
 ## 1.1.1
 
 * Web: `saveToGallery` triggers a browser download instead of throwing `unsupported`.

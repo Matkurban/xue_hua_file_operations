@@ -130,12 +130,19 @@ enum GallerySaver {
         _ level: PHAccessLevel,
         completion: @escaping (PHAuthorizationStatus) -> Void
     ) {
-        let apply = {
-            PHPhotoLibrary.requestAuthorization(for: level) { newStatus in
-                DispatchQueue.main.async {
-                    completion(newStatus)
-                }
+        let finish: (PHAuthorizationStatus) -> Void = { status in
+            DispatchQueue.main.async {
+                completion(status)
             }
+        }
+        let apply = {
+            let current = PHPhotoLibrary.authorizationStatus(for: level)
+            // Apple only shows the system prompt while status is notDetermined.
+            if current != .notDetermined {
+                finish(current)
+                return
+            }
+            PHPhotoLibrary.requestAuthorization(for: level, handler: finish)
         }
         if Thread.isMainThread {
             apply()

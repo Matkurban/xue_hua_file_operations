@@ -216,6 +216,18 @@ void main() {
     expect(status.isPermanentlyDenied, isTrue);
   });
 
+  test('openAppSettings invokes channel', () async {
+    late MethodCall captured;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+          captured = methodCall;
+          return true;
+        });
+
+    await platform.openAppSettings();
+    expect(captured.method, 'openAppSettings');
+  });
+
   test('openFile encodes path and identifier', () async {
     late MethodCall captured;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

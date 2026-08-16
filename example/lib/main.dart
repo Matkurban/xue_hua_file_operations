@@ -152,28 +152,91 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
       return;
     }
 
-    final result = await _ops.saveToGallery(
-      fileName: source.name,
-      bytes: saveBytes,
-      sourcePath: saveSourcePath,
-    );
-    if (!mounted) return;
-    setState(() {
-      _status = 'Gallery: ${result.path ?? result.identifier ?? result.name}';
-    });
+    try {
+      final result = await _ops.saveToGallery(
+        fileName: source.name,
+        bytes: saveBytes,
+        sourcePath: saveSourcePath,
+      );
+      if (!mounted) return;
+      setState(() {
+        _status = 'Gallery: ${result.path ?? result.identifier ?? result.name}';
+      });
+    } on FileOperationsException catch (e) {
+      if (!mounted) return;
+      setState(() => _status = e.toString());
+      if (e.code == ErrorCode.permissionDenied) {
+        await _offerOpenSettings(
+          'Photo library access was denied. The system will not ask again; '
+          'enable Photos for this app in Settings.',
+        );
+      }
+    }
   });
 
   Future<void> _galleryStatus() => _run(() async {
     final status = await _ops.galleryPermissionStatus();
     if (!mounted) return;
-    setState(() => _status = 'Gallery status: ${status.name}');
+    setState(() => _status = _describeGalleryStatus(status, requested: false));
   });
 
   Future<void> _requestGalleryPermission() => _run(() async {
     final status = await _ops.requestGalleryPermission();
     if (!mounted) return;
-    setState(() => _status = 'Gallery permission: ${status.name}');
+    setState(() => _status = _describeGalleryStatus(status, requested: true));
+    if (status.isPermanentlyDenied || status.isRestricted) {
+      await _offerOpenSettings(
+        status.isRestricted
+            ? 'Photos access is restricted (for example by parental controls). '
+                  'It cannot be changed from a permission dialog.'
+            : 'The system will not show the Photos prompt again. '
+                  'Enable Photos for this app in Settings.',
+      );
+    }
   });
+
+  String _describeGalleryStatus(
+    GalleryPermissionStatus status, {
+    required bool requested,
+  }) {
+    final prefix = requested ? 'Gallery permission' : 'Gallery status';
+    switch (status) {
+      case GalleryPermissionStatus.denied:
+        return '$prefix: denied (not determined yet; Request can still show a system dialog)';
+      case GalleryPermissionStatus.permanentlyDenied:
+        return '$prefix: permanentlyDenied (no system dialog; use Open Settings)';
+      case GalleryPermissionStatus.restricted:
+        return '$prefix: restricted (OS blocked Photos access)';
+      default:
+        return '$prefix: ${status.name}';
+    }
+  }
+
+  Future<void> _offerOpenSettings(String message) async {
+    if (!mounted) return;
+    final open = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Photos permission'),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Not now'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Open Settings'),
+            ),
+          ],
+        );
+      },
+    );
+    if (open == true) {
+      await _ops.openAppSettings();
+    }
+  }
 
   Future<void> _openSelected() => _run(() async {
     final file = _selected;

@@ -319,4 +319,7 @@ class XueHuaFileOperationsWeb extends XueHuaFileOperationsPlatform {
           'Opening local paths is not supported on Web; pass identifier (object URL)',
     );
   }
+
+  @override
+  Future<void> openAppSettings() async {}
 }

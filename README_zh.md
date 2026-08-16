@@ -15,6 +15,7 @@
 - 另存为（`saveFile`）：写入字节，或从源路径复制
 - 将图片或视频保存到系统图库（`saveToGallery`）
 - 查询或申请图库权限（`galleryPermissionStatus` / `requestGalleryPermission`）
+- 图库权限被永久拒绝后打开系统设置（`openAppSettings`）
 - 使用系统默认处理程序打开文件（`openFile`）
 - 统一的 `PlatformFile` 模型，以及类型化异常 `FileOperationsException` / `ErrorCode`
 
@@ -24,7 +25,7 @@
 
 ```yaml
 dependencies:
-  xue_hua_file_operations: ^1.1.1
+  xue_hua_file_operations: ^1.2.0
 ```
 
 然后执行：
@@ -102,6 +103,10 @@ class MainActivity : FlutterFragmentActivity()
 <string>This app saves images and videos to albums in your photo library.</string>
 ```
 
+PhotoKit **仅在状态为 `notDetermined` 时**弹出系统授权框。用户点了不允许之后，`requestGalleryPermission` 会返回 `permanentlyDenied` 且不再弹框。请调用 `openAppSettings()`（使用 [`UIApplication.openSettingsURLString`](https://developer.apple.com/documentation/uikit/uiapplication/opensettingsurlstring)），让用户在设置里打开照片权限。
+
+开发时若要重新测试首次弹框，请删除应用或重置模拟器隐私设置。同一 Bundle ID 会记住上次的拒绝。
+
 **目录访问：** 用户选择目录后，插件会在 `DirectoryResult.identifier` 中保存带前缀的安全作用域 bookmark。后续访问或调用 `openFile` 时请优先使用该 `identifier`；仅依赖展示用 `path` 在应用重启后不可靠。
 
 ### macOS
@@ -121,6 +126,14 @@ class MainActivity : FlutterFragmentActivity()
 ```
 
 以及与 iOS 相同的 `NSPhotoLibraryAddUsageDescription` / `NSPhotoLibraryUsageDescription`（写在 `macos/Runner/Info.plist`）。
+
+若缺少 Photos entitlement，PhotoKit 常会立刻返回 `.denied` 且永不弹框。
+
+与 iOS 相同：系统只弹一次授权框。拒绝后 `openAppSettings()` 会打开「系统设置 → 隐私与安全性 → 照片」（便捷 URL，不是 Apple 的 `openSettingsURLString` 等价 API）。开发时重置：
+
+```bash
+tccutil reset Photos com.your.bundle.id
+```
 
 可参考示例工程 `example/macos/Runner/` 下的 entitlements。
 
@@ -176,8 +189,8 @@ await ops.saveToGallery(
 );
 
 final status = await ops.requestGalleryPermission();
-if (status.isPermanentlyDenied) {
-  // 引导用户去系统设置；系统不会再弹出授权框。
+if (status.isPermanentlyDenied || status.isRestricted) {
+  await ops.openAppSettings();
 }
 
 // 打开
@@ -337,18 +350,43 @@ Future<GalleryPermissionStatus> requestGalleryPermission({bool forAlbum = false}
 |------|------|--------|------|
 | `forAlbum` | `bool` | `false` | 为 `true` 时申请 `saveToGallery(albumName:)` 所需的读相册权限。 |
 
-`galleryPermissionStatus` 不弹窗。`requestGalleryPermission` 仅在尚未决定时弹窗。
+`galleryPermissionStatus` 不弹窗。`requestGalleryPermission` **仅在** PhotoKit 状态仍为 `notDetermined` 时弹出系统框（[WWDC20 10641](https://developer.apple.com/videos/play/wwdc2020/10641/)、[requestAuthorization(for:handler:)](https://developer.apple.com/documentation/photos/phphotolibrary/requestauthorization(for:handler:))）。
 
-无自定义相册时，`status.isGranted || status.isLimited` 即可保存。自定义相册需要 `status.isGranted`。若 `status.isPermanentlyDenied`，请引导用户去系统设置。
+| PhotoKit `PHAuthorizationStatus` | 插件状态 | 含义 |
+|----------------------------------|----------|------|
+| `notDetermined` | `denied` | 尚未询问，请求时仍可弹框 |
+| `authorized` | `granted` | 完整照片权限 |
+| `limited` | `limited` | 有限相册（iOS 14+）；仍可保存，不能用自定义相册 |
+| `restricted` | `restricted` | 系统限制（家长控制 / MDM） |
+| `denied` | `permanentlyDenied` | 用户拒绝；Apple 不会再弹框 |
+
+无自定义相册时，`status.isGranted || status.isLimited` 即可保存。自定义相册需要 `status.isGranted`。若 `status.isPermanentlyDenied` 或 `status.isRestricted`，在用户点击后再调用 `openAppSettings()` — 不要在 `requestGalleryPermission` 内部自动跳转设置。
 
 | 平台 | 典型行为 |
 |------|----------|
 | iOS | PhotoKit `addOnly`，`forAlbum` 时为 `readWrite` |
-| macOS | 始终 PhotoKit `readWrite`（没有独立的 Add Only 开关） |
+| macOS | 与 iOS 相同：`addOnly` 或 `readWrite`（`forAlbum`） |
 | Android 24–28 | `WRITE_EXTERNAL_STORAGE` |
 | Android 29+ | 始终 `granted`（不申请 `READ_MEDIA_*`） |
 | Windows / Linux | 始终 `granted` |
 | Web | 始终 `granted` |
+
+### `openAppSettings`
+
+打开系统设置，便于用户在永久拒绝后重新打开照片 / 存储权限。
+
+```dart
+Future<void> openAppSettings()
+```
+
+| 平台 | 行为 |
+|------|------|
+| iOS | 应用设置页（`UIApplication.openSettingsURLString`） |
+| macOS | 系统设置 → 隐私与安全性 → 照片 |
+| Android | 应用详情设置 |
+| Windows | Windows 设置的隐私 / 应用页 |
+| Linux | 空操作（没有应用级照片开关） |
+| Web | 空操作 |
 
 ### `openFile`
 
@@ -439,11 +477,11 @@ Future<void> openFile({String? path, String? identifier})
 
 | 值 | 含义 |
 |----|------|
-| `denied` | 尚未申请，或 Android 上拒绝但仍可再弹窗 |
+| `denied` | 尚未申请（PhotoKit `notDetermined`），或 Android 上拒绝但仍可再弹窗 |
 | `granted` | 已授权写入图库 |
 | `restricted` | 系统限制（家长控制等）。仅 iOS / macOS |
 | `limited` | 有限相册。iOS 14+；仍可保存，不能使用自定义相册 |
-| `permanentlyDenied` | 无法再弹窗，需去系统设置 |
+| `permanentlyDenied` | PhotoKit `.denied` 或 Android「不再询问」；无法再弹窗，请调用 `openAppSettings()` |
 
 ## 错误处理
 

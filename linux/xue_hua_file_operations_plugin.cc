@@ -485,6 +485,9 @@ static void xue_hua_file_operations_plugin_handle_method_call(
         fl_method_success_response_new(fl_value_new_string("granted")));
   } else if (strcmp(method, "openFile") == 0) {
     response = open_file(self, args);
+  } else if (strcmp(method, "openAppSettings") == 0) {
+    response = FL_METHOD_RESPONSE(
+        fl_method_success_response_new(fl_value_new_bool(TRUE)));
   } else {
     response = FL_METHOD_RESPONSE(fl_method_not_implemented_response_new());
   }

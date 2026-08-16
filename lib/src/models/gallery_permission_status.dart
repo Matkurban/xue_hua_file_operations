@@ -3,7 +3,8 @@
 /// Mirrors [permission_handler](https://pub.dev/packages/permission_handler)
 /// `PermissionStatus` (without `provisional`, which is notification-only).
 enum GalleryPermissionStatus {
-  /// Not requested yet, or denied on Android but the dialog can still be shown.
+  /// Not requested yet (PhotoKit `notDetermined`), or denied on Android but the
+  /// dialog can still be shown.
   denied,
 
   /// The user granted access to save to the gallery.
@@ -19,7 +20,8 @@ enum GalleryPermissionStatus {
 
   /// The permission dialog will not be shown again; the user must use Settings.
   ///
-  /// iOS / macOS: the user denied the prompt. Android: "Don't ask again".
+  /// iOS / macOS: PhotoKit `.denied`. Android: "Don't ask again".
+  /// After a user action, call `XueHuaFileOperations.instance.openAppSettings()`.
   permanentlyDenied;
 
   String get wireName => name;

@@ -15,6 +15,7 @@ Cross-platform Flutter plugin for picking files and directories, saving files (s
 - Save-as dialog (`saveFile`) from bytes or by copying a source path
 - Save an image or video to the system gallery (`saveToGallery`)
 - Query or request gallery permission (`galleryPermissionStatus` / `requestGalleryPermission`)
+- Open system settings when gallery access is permanently denied (`openAppSettings`)
 - Open a file with the system handler (`openFile`)
 - Unified `PlatformFile` model and typed `FileOperationsException` / `ErrorCode`
 
@@ -24,7 +25,7 @@ Add the dependency to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  xue_hua_file_operations: ^1.1.1
+  xue_hua_file_operations: ^1.2.0
 ```
 
 Then run:
@@ -102,6 +103,10 @@ If you pass `albumName` (create / add to a custom album), also add:
 <string>This app saves images and videos to albums in your photo library.</string>
 ```
 
+PhotoKit shows the system prompt **only while status is `notDetermined`**. After the user taps Don’t Allow, `requestGalleryPermission` returns `permanentlyDenied` with no dialog. Call `openAppSettings()` (uses [`UIApplication.openSettingsURLString`](https://developer.apple.com/documentation/uikit/uiapplication/opensettingsurlstring)) so they can enable Photos in Settings.
+
+To re-test the first prompt during development, delete the app or reset the Simulator’s Privacy settings. The same bundle ID remembers a previous denial.
+
 **Directory access:** When the user picks a directory, the plugin stores a security-scoped bookmark in `DirectoryResult.identifier` (prefixed). Prefer that identifier for later access or `openFile`; the display `path` alone is not durable across app launches.
 
 ### macOS
@@ -121,6 +126,14 @@ For `saveToGallery` (Photos library), also add:
 ```
 
 And the same `NSPhotoLibraryAddUsageDescription` / `NSPhotoLibraryUsageDescription` keys as on iOS (in `macos/Runner/Info.plist`).
+
+Without the Photos entitlement, PhotoKit often returns `.denied` immediately and never shows a prompt.
+
+Same one-shot prompt rule as iOS. After a denial, `openAppSettings()` opens System Settings → Privacy & Security → Photos (a convenience URL, not an Apple `openSettingsURLString` equivalent). To reset during development:
+
+```bash
+tccutil reset Photos com.your.bundle.id
+```
 
 See the example app entitlements under `example/macos/Runner/`.
 
@@ -176,8 +189,8 @@ await ops.saveToGallery(
 );
 
 final status = await ops.requestGalleryPermission();
-if (status.isPermanentlyDenied) {
-  // Direct the user to system Settings; the dialog will not appear again.
+if (status.isPermanentlyDenied || status.isRestricted) {
+  await ops.openAppSettings();
 }
 
 // Open
@@ -337,18 +350,43 @@ Future<GalleryPermissionStatus> requestGalleryPermission({bool forAlbum = false}
 |-----------|------|---------|-------------|
 | `forAlbum` | `bool` | `false` | `true` requests read/write access needed for `saveToGallery(albumName:)`. |
 
-`galleryPermissionStatus` never shows a prompt. `requestGalleryPermission` shows one only when the status is still undetermined.
+`galleryPermissionStatus` never shows a prompt. `requestGalleryPermission` shows the system dialog **only** while PhotoKit status is still `notDetermined` ([WWDC20 10641](https://developer.apple.com/videos/play/wwdc2020/10641/), [requestAuthorization(for:handler:)](https://developer.apple.com/documentation/photos/phphotolibrary/requestauthorization(for:handler:))).
 
-Saving without a custom album is allowed when `status.isGranted || status.isLimited`. Custom albums need `status.isGranted`. If `status.isPermanentlyDenied`, send the user to system Settings.
+| PhotoKit `PHAuthorizationStatus` | Plugin status | Meaning |
+|----------------------------------|---------------|---------|
+| `notDetermined` | `denied` | Not asked yet; a request can still show a dialog |
+| `authorized` | `granted` | Full Photos access |
+| `limited` | `limited` | Limited library (iOS 14+); save works, custom albums do not |
+| `restricted` | `restricted` | OS blocked access (parental controls / MDM) |
+| `denied` | `permanentlyDenied` | User refused; Apple will not prompt again |
+
+Saving without a custom album is allowed when `status.isGranted || status.isLimited`. Custom albums need `status.isGranted`. If `status.isPermanentlyDenied` or `status.isRestricted`, call `openAppSettings()` after a user tap — do not jump to Settings from `requestGalleryPermission` itself.
 
 | Platform | Typical result |
 |----------|----------------|
 | iOS | PhotoKit `addOnly` or `readWrite` (`forAlbum`) |
-| macOS | Always PhotoKit `readWrite` (no add-only toggle) |
+| macOS | PhotoKit `addOnly` or `readWrite` (`forAlbum`), same as iOS |
 | Android 24–28 | `WRITE_EXTERNAL_STORAGE` |
 | Android 29+ | Always `granted` (no `READ_MEDIA_*`) |
 | Windows / Linux | Always `granted` |
 | Web | Always `granted` |
+
+### `openAppSettings`
+
+Open the OS settings UI so the user can enable Photos / storage access after a permanent denial.
+
+```dart
+Future<void> openAppSettings()
+```
+
+| Platform | Behavior |
+|----------|----------|
+| iOS | App Settings via `UIApplication.openSettingsURLString` |
+| macOS | System Settings → Privacy & Security → Photos |
+| Android | Application details settings |
+| Windows | Windows Settings privacy / apps page |
+| Linux | No-op (no app Photos toggle) |
+| Web | No-op |
 
 ### `openFile`
 
@@ -439,11 +477,11 @@ Result of `galleryPermissionStatus` / `requestGalleryPermission`. Getters: `isDe
 
 | Value | Meaning |
 |-------|---------|
-| `denied` | Not requested yet, or denied on Android but the dialog can still be shown |
+| `denied` | Not requested yet (PhotoKit `notDetermined`), or denied on Android but the dialog can still be shown |
 | `granted` | Full access to save to the gallery |
 | `restricted` | OS restriction (parental controls). iOS / macOS only |
 | `limited` | Limited Photos Library. iOS 14+; saving still works, custom albums do not |
-| `permanentlyDenied` | Dialog will not appear again; user must change Settings |
+| `permanentlyDenied` | PhotoKit `.denied` or Android "Don't ask again"; dialog will not appear again — call `openAppSettings()` |
 
 ## Errors
 

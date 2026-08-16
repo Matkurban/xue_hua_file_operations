@@ -90,4 +90,8 @@ abstract class XueHuaFileOperationsPlatform extends PlatformInterface {
   Future<void> openFile({String? path, String? identifier}) {
     throw UnimplementedError('openFile() has not been implemented.');
   }
+
+  Future<void> openAppSettings() {
+    throw UnimplementedError('openAppSettings() has not been implemented.');
+  }
 }

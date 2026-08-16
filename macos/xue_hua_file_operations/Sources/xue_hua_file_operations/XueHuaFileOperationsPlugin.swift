@@ -30,6 +30,8 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin {
             GallerySaver.requestPermission(call: call, result: result)
         case "openFile":
             openFile(call: call, result: result)
+        case "openAppSettings":
+            openAppSettings(result: result)
         default:
             result(FlutterMethodNotImplemented)
         }
@@ -218,6 +220,32 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin {
             result(true)
         } else {
             result(FlutterError(code: "io_error", message: "Unable to open file", details: nil))
+        }
+    }
+
+    private func openAppSettings(result: @escaping FlutterResult) {
+        let apply = {
+            let candidates = [
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Photos",
+                "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Photos",
+                "x-apple.systempreferences:",
+            ]
+            for spec in candidates {
+                if let url = URL(string: spec), NSWorkspace.shared.open(url) {
+                    result(true)
+                    return
+                }
+            }
+            result(FlutterError(
+                code: "unsupported",
+                message: "Unable to open System Settings",
+                details: nil
+            ))
+        }
+        if Thread.isMainThread {
+            apply()
+        } else {
+            DispatchQueue.main.async(execute: apply)
         }
     }
 

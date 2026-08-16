@@ -48,6 +48,8 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
             GallerySaver.requestPermission(call: call, result: result)
         case "openFile":
             openFile(call: call, result: result)
+        case "openAppSettings":
+            openAppSettings(result: result)
         default:
             result(FlutterMethodNotImplemented)
         }
@@ -256,6 +258,35 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
                 }
                 result(true)
             }
+        }
+    }
+
+    private func openAppSettings(result: @escaping FlutterResult) {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else {
+            result(FlutterError(
+                code: "unsupported",
+                message: "Unable to open Settings",
+                details: nil
+            ))
+            return
+        }
+        let apply = {
+            UIApplication.shared.open(url, options: [:]) { success in
+                if success {
+                    result(true)
+                } else {
+                    result(FlutterError(
+                        code: "unsupported",
+                        message: "Unable to open Settings",
+                        details: nil
+                    ))
+                }
+            }
+        }
+        if Thread.isMainThread {
+            apply()
+        } else {
+            DispatchQueue.main.async(execute: apply)
         }
     }
 

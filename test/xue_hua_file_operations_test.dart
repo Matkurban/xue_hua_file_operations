@@ -76,6 +76,9 @@ class MockXueHuaFileOperationsPlatform
   Future<void> openFile({String? path, String? identifier}) async {}
 
   @override
+  Future<void> openAppSettings() async {}
+
+  @override
   Future<GalleryPermissionStatus> galleryPermissionStatus({
     bool forAlbum = false,
   }) async {
@@ -222,6 +225,13 @@ void main() {
     final granted = await XueHuaFileOperations.instance
         .requestGalleryPermission(forAlbum: true);
     expect(granted.isGranted, isTrue);
+  });
+
+  test('openAppSettings delegates to platform', () async {
+    final fake = MockXueHuaFileOperationsPlatform();
+    XueHuaFileOperationsPlatform.instance = fake;
+
+    await XueHuaFileOperations.instance.openAppSettings();
   });
 
   test('GalleryPermissionStatus parses wire names', () {
