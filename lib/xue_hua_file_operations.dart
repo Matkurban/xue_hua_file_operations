@@ -4,16 +4,20 @@ import 'src/errors/error_code.dart';
 import 'src/errors/file_operations_exception.dart';
 import 'src/models/directory_result.dart';
 import 'src/models/file_type.dart';
+import 'src/models/gallery_media_type.dart';
 import 'src/models/platform_file.dart';
 import 'src/models/save_file_result.dart';
+import 'src/models/save_to_gallery_result.dart';
 import 'xue_hua_file_operations_platform_interface.dart';
 
 export 'src/errors/error_code.dart';
 export 'src/errors/file_operations_exception.dart';
 export 'src/models/directory_result.dart';
 export 'src/models/file_type.dart';
+export 'src/models/gallery_media_type.dart';
 export 'src/models/platform_file.dart';
 export 'src/models/save_file_result.dart';
+export 'src/models/save_to_gallery_result.dart';
 
 /// Cross-platform file pick / save / open singleton API.
 class XueHuaFileOperations {
@@ -97,6 +101,47 @@ class XueHuaFileOperations {
       sourcePath: sourcePath,
       allowedExtensions: allowedExtensions,
       dialogTitle: dialogTitle,
+    );
+  }
+
+  /// Save an image or video to the system gallery / Pictures folder.
+  ///
+  /// At least one of [bytes] / [sourcePath] is required. [type] is inferred
+  /// from [fileName] (or [sourcePath]) when omitted. Web is unsupported.
+  Future<SaveToGalleryResult> saveToGallery({
+    required String fileName,
+    Uint8List? bytes,
+    String? sourcePath,
+    GalleryMediaType? type,
+    String? albumName,
+  }) {
+    if (bytes == null && (sourcePath == null || sourcePath.isEmpty)) {
+      throw FileOperationsException(
+        ErrorCode.invalidArgs,
+        message: 'Either bytes or sourcePath must be provided',
+      );
+    }
+    final resolvedType =
+        type ??
+        GalleryMediaType.fromFileName(fileName) ??
+        (sourcePath != null
+            ? GalleryMediaType.fromFileName(sourcePath)
+            : null);
+    if (resolvedType == null) {
+      throw FileOperationsException(
+        ErrorCode.invalidArgs,
+        message:
+            'Unable to infer image/video type from fileName; '
+            'pass GalleryMediaType or use a media extension',
+        details: {'fileName': fileName},
+      );
+    }
+    return _platform.saveToGallery(
+      fileName: fileName,
+      bytes: bytes,
+      sourcePath: sourcePath,
+      type: resolvedType,
+      albumName: albumName,
     );
   }
 

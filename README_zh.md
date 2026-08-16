@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-跨平台 Flutter 插件：支持选择文件与目录、另存为（Save As），以及使用系统默认应用打开文件。
+跨平台 Flutter 插件：支持选择文件与目录、另存为（Save As）、将图片/视频保存到图库，以及使用系统默认应用打开文件。
 
 **仓库地址：** [https://github.com/Matkurban/xue_hua_file_operations](https://github.com/Matkurban/xue_hua_file_operations)
 
@@ -13,6 +13,7 @@
 - 多选可选 `maxFiles` 上限（在用户选择后校验）
 - 选择目录（`pickDirectory`）
 - 另存为（`saveFile`）：写入字节，或从源路径复制
+- 将图片或视频保存到系统图库（`saveToGallery`）
 - 使用系统默认处理程序打开文件（`openFile`）
 - 统一的 `PlatformFile` 模型，以及类型化异常 `FileOperationsException` / `ErrorCode`
 
@@ -22,7 +23,7 @@
 
 ```yaml
 dependencies:
-  xue_hua_file_operations: ^1.0.1
+  xue_hua_file_operations: ^1.1.0
 ```
 
 然后执行：
@@ -35,12 +36,12 @@ flutter pub get
 
 | 平台 | 是否支持 | 说明 |
 |------|----------|------|
-| Android | 是 | Storage Access Framework (SAF) / Activity Result API |
-| iOS | 是 | `UIDocumentPicker` / 文档交互 |
-| macOS | 是 | 原生 `NSOpenPanel` / `NSSavePanel` |
-| Windows | 是 | 原生文件 / 文件夹对话框 |
-| Linux | 是 | 原生文件 / 文件夹对话框 |
-| Web | 是 | HTML `<input type="file">` 与 Blob 下载 |
+| Android | 是 | Storage Access Framework (SAF) / Activity Result API；`saveToGallery` 使用 MediaStore / 公共 Pictures |
+| iOS | 是 | `UIDocumentPicker` / 文档交互；`saveToGallery` 使用 PhotoKit |
+| macOS | 是 | 原生 `NSOpenPanel` / `NSSavePanel`；`saveToGallery` 使用 PhotoKit |
+| Windows | 是 | 原生文件 / 文件夹对话框；`saveToGallery` 写入 Pictures / Videos |
+| Linux | 是 | 原生文件 / 文件夹对话框；`saveToGallery` 写入 XDG Pictures / Videos |
+| Web | 是 | HTML `<input type="file">` 与 Blob 下载；`saveToGallery` 不支持 |
 
 ### `path` 与 `identifier` 行为
 
@@ -62,7 +63,15 @@ flutter pub get
 
 ### Android
 
-**权限：** 不需要危险级存储权限（如 `READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE` / 媒体权限）。插件使用系统文档选择器（SAF）。
+**权限（选择 / 另存为 / 打开）：** 不需要危险级存储权限（如 `READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE` / 媒体权限）。这些 API 使用系统文档选择器（SAF）。
+
+**权限（`saveToGallery`）：**
+
+- **API 24–28：** 插件已声明 `WRITE_EXTERNAL_STORAGE`（`maxSdkVersion=28`），并在运行时申请。拒绝时抛出 `ErrorCode.permissionDenied`。
+- **API 29+：** 无需存储权限。通过 MediaStore 插入（`RELATIVE_PATH` + `IS_PENDING`）。
+- **API 33+：** **不要**为该 API 添加 `READ_MEDIA_IMAGES` / `READ_MEDIA_VIDEO`。插入本应用创建的媒体不需要它们。
+
+不要依赖 `requestLegacyExternalStorage`。
 
 **FileProvider：** 插件已注册自有 `FileProvider`，用于通过 content URI 打开文件。基础使用无需在宿主 App 中额外配置 FileProvider。
 
@@ -76,7 +85,21 @@ class MainActivity : FlutterFragmentActivity()
 
 ### iOS
 
-**权限：** 使用本插件的文档选择 / 保存 / 打开 API 时，无需额外在 Info.plist 中配置相册等隐私用途说明键。
+**权限（文档选择 / 保存 / 打开）：** 使用本插件的文档选择 / 保存 / 打开 API 时，无需额外在 Info.plist 中配置相册等隐私用途说明键。
+
+**权限（`saveToGallery`）：** 宿主 `Info.plist` 需添加：
+
+```xml
+<key>NSPhotoLibraryAddUsageDescription</key>
+<string>This app saves images and videos to your photo library.</string>
+```
+
+若传入 `albumName`（创建 / 加入自定义相册），还需：
+
+```xml
+<key>NSPhotoLibraryUsageDescription</key>
+<string>This app saves images and videos to albums in your photo library.</string>
+```
 
 **目录访问：** 用户选择目录后，插件会在 `DirectoryResult.identifier` 中保存带前缀的安全作用域 bookmark。后续访问或调用 `openFile` 时请优先使用该 `identifier`；仅依赖展示用 `path` 在应用重启后不可靠。
 
@@ -89,15 +112,24 @@ class MainActivity : FlutterFragmentActivity()
 <true/>
 ```
 
+若使用 `saveToGallery`（写入 Photos 图库），还需：
+
+```xml
+<key>com.apple.security.personal-information.photos-library</key>
+<true/>
+```
+
+以及与 iOS 相同的 `NSPhotoLibraryAddUsageDescription` / `NSPhotoLibraryUsageDescription`（写在 `macos/Runner/Info.plist`）。
+
 可参考示例工程 `example/macos/Runner/` 下的 entitlements。
 
 ### Windows
 
-**权限：** 无需额外权限。使用系统原生文件 / 文件夹对话框，无需为本插件添加额外清单配置。
+**权限：** 无需额外权限。使用系统原生文件 / 文件夹对话框。`saveToGallery` 写入用户 Pictures 或 Videos 已知文件夹。无需为本插件添加额外清单配置。
 
 ### Linux
 
-**权限：** 无需额外权限。使用系统原生文件 / 文件夹对话框，无需为本插件添加额外桌面权限。
+**权限：** 无需额外权限。使用系统原生文件 / 文件夹对话框。`saveToGallery` 写入 XDG Pictures 或 Videos（Linux 没有系统相册 API）。无需为本插件添加额外桌面权限。
 
 ### Web
 
@@ -108,6 +140,7 @@ class MainActivity : FlutterFragmentActivity()
 - `path` 始终为 `null`
 - 选中的文件始终包含 `bytes`
 - `saveFile` 必须提供 `bytes`（不支持 `sourcePath`）
+- `saveToGallery` 不支持（`ErrorCode.unsupported`）
 - `openFile` 必须提供 object URL 形式的 `identifier`（例如来自先前选择）；不支持本地文件系统路径
 
 ## 快速开始
@@ -129,6 +162,13 @@ final dir = await ops.pickDirectory();
 // 另存为
 await ops.saveFile(
   fileName: 'export.txt',
+  bytes: file?.bytes,
+  sourcePath: file?.path,
+);
+
+// 保存图片/视频到图库
+await ops.saveToGallery(
+  fileName: file?.name ?? 'shot.jpg',
   bytes: file?.bytes,
   sourcePath: file?.path,
 );
@@ -244,6 +284,37 @@ Future<SaveFileResult?> saveFile({
 - 若 `bytes` 与 `sourcePath` 均缺失 / 为空，抛出 `ErrorCode.invalidArgs`
 - 在 Web 上若 `bytes` 为 null（例如只提供了 `sourcePath`），抛出 `ErrorCode.unsupported`
 
+### `saveToGallery`
+
+将图片或视频保存到系统图库（桌面端为 Pictures/Videos）。没有取消对话框；失败会抛出异常。
+
+```dart
+Future<SaveToGalleryResult> saveToGallery({
+  required String fileName,
+  Uint8List? bytes,
+  String? sourcePath,
+  GalleryMediaType? type,
+  String? albumName,
+})
+```
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `fileName` | `String` | *（必填）* | 含扩展名的显示文件名（用于 MIME / 类型推断）。 |
+| `bytes` | `Uint8List?` | `null` | 要写入的内容。需提供 `bytes` 和/或 `sourcePath`。 |
+| `sourcePath` | `String?` | `null` | 已有图片/视频的路径（Android 也可为 `content://` URI）。 |
+| `type` | `GalleryMediaType?` | 自动推断 | `image` 或 `video`。未传时从 `fileName` / `sourcePath` 推断。 |
+| `albumName` | `String?` | `null` | 可选相册 / 子目录。iOS/macOS 自定义相册需要完整相册权限。 |
+
+**返回值：** `SaveToGalleryResult` — `name`、可选文件系统 `path`，以及原生 `identifier`。
+
+**异常：**
+
+- 若 `bytes` 与 `sourcePath` 均缺失，或无法推断媒体类型，抛出 `ErrorCode.invalidArgs`
+- 图库 / 存储权限被拒绝时抛出 `ErrorCode.permissionDenied`
+- 在 Web 上抛出 `ErrorCode.unsupported`
+- I/O 失败时抛出 `ErrorCode.notFound` / `ErrorCode.ioError`
+
 ### `openFile`
 
 使用系统默认应用打开文件。
@@ -298,6 +369,16 @@ Future<void> openFile({String? path, String? identifier})
 | `name` | `String` | 已保存文件名（Web 上为下载名） |
 | `path` | `String?` | 移动端 / 桌面端为绝对路径；Web 上为 `null` |
 
+### `SaveToGalleryResult`
+
+`saveToGallery` 的返回结果。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `name` | `String` | 最终文件名 |
+| `path` | `String?` | 桌面端（以及 Android API 24–28）为绝对路径；Android 10+ 通常为 `null` |
+| `identifier` | `String?` | Android `content://` URI、iOS/macOS Photos `localIdentifier`，或桌面 `file://` URI |
+
 ### `FileType`
 
 选择对话框的高级类型过滤：
@@ -309,6 +390,13 @@ Future<void> openFile({String? path, String? identifier})
 | `FileType.video` | 视频 |
 | `FileType.audio` | 音频 |
 | `FileType.custom` | 依赖 `allowedExtensions` / `allowedMimeTypes` |
+
+### `GalleryMediaType`
+
+| 值 | 含义 |
+|----|------|
+| `GalleryMediaType.image` | 图片 |
+| `GalleryMediaType.video` | 视频 |
 
 ## 错误处理
 

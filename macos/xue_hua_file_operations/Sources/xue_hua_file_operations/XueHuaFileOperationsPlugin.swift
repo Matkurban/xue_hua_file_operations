@@ -22,6 +22,8 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin {
             pick(call: call, result: result, multiple: false, directory: true)
         case "saveFile":
             saveFile(call: call, result: result)
+        case "saveToGallery":
+            GallerySaver.save(call: call, result: result)
         case "openFile":
             openFile(call: call, result: result)
         default:

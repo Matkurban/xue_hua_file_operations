@@ -131,6 +131,41 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
     });
   });
 
+  Future<void> _saveToGallery() => _run(() async {
+    final source = _selected;
+    if (source == null) {
+      setState(() => _status = 'Select a file first');
+      return;
+    }
+    final path = source.path;
+    final bytes = source.bytes;
+    final Uint8List? saveBytes;
+    final String? saveSourcePath;
+    if (path != null && path.isNotEmpty) {
+      saveBytes = null;
+      saveSourcePath = path;
+    } else if (bytes != null) {
+      saveBytes = bytes;
+      saveSourcePath = null;
+    } else {
+      setState(
+        () => _status = 'Selected file has no path or bytes to save',
+      );
+      return;
+    }
+
+    final result = await _ops.saveToGallery(
+      fileName: source.name,
+      bytes: saveBytes,
+      sourcePath: saveSourcePath,
+    );
+    if (!mounted) return;
+    setState(() {
+      _status =
+          'Gallery: ${result.path ?? result.identifier ?? result.name}';
+    });
+  });
+
   Future<void> _openSelected() => _run(() async {
     final file = _selected;
     if (file == null) {
@@ -185,6 +220,10 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
               OutlinedButton(
                 onPressed: _saveFile,
                 child: const Text('Save As'),
+              ),
+              OutlinedButton(
+                onPressed: _saveToGallery,
+                child: const Text('Save to Gallery'),
               ),
               OutlinedButton(
                 onPressed: _openSelected,

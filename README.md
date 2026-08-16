@@ -2,7 +2,7 @@
 
 English | [中文](README_zh.md)
 
-Cross-platform Flutter plugin for picking files and directories, saving files (save-as), and opening files with the system default application.
+Cross-platform Flutter plugin for picking files and directories, saving files (save-as), saving images/videos to the gallery, and opening files with the system default application.
 
 **Repository:** [https://github.com/Matkurban/xue_hua_file_operations](https://github.com/Matkurban/xue_hua_file_operations)
 
@@ -13,6 +13,7 @@ Cross-platform Flutter plugin for picking files and directories, saving files (s
 - Optional `maxFiles` limit for multi-select (validated after selection)
 - Pick a directory (`pickDirectory`)
 - Save-as dialog (`saveFile`) from bytes or by copying a source path
+- Save an image or video to the system gallery (`saveToGallery`)
 - Open a file with the system handler (`openFile`)
 - Unified `PlatformFile` model and typed `FileOperationsException` / `ErrorCode`
 
@@ -22,7 +23,7 @@ Add the dependency to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  xue_hua_file_operations: ^1.0.1
+  xue_hua_file_operations: ^1.1.0
 ```
 
 Then run:
@@ -35,12 +36,12 @@ flutter pub get
 
 | Platform | Supported | Notes |
 |----------|-----------|--------|
-| Android | Yes | Storage Access Framework (SAF) / Activity Result APIs |
-| iOS | Yes | `UIDocumentPicker` / document interaction |
-| macOS | Yes | Native `NSOpenPanel` / `NSSavePanel` |
-| Windows | Yes | Native file / folder dialogs |
-| Linux | Yes | Native file / folder dialogs |
-| Web | Yes | HTML `<input type="file">` and Blob download |
+| Android | Yes | Storage Access Framework (SAF) / Activity Result APIs; `saveToGallery` uses MediaStore / public Pictures |
+| iOS | Yes | `UIDocumentPicker` / document interaction; `saveToGallery` uses PhotoKit |
+| macOS | Yes | Native `NSOpenPanel` / `NSSavePanel`; `saveToGallery` uses PhotoKit |
+| Windows | Yes | Native file / folder dialogs; `saveToGallery` writes Pictures / Videos |
+| Linux | Yes | Native file / folder dialogs; `saveToGallery` writes XDG Pictures / Videos |
+| Web | Yes | HTML `<input type="file">` and Blob download; `saveToGallery` is unsupported |
 
 ### Path and identifier behavior
 
@@ -62,7 +63,15 @@ flutter pub get
 
 ### Android
 
-**Permissions:** No dangerous storage permissions (`READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE` / media permissions) are required. The plugin uses the system document picker (SAF).
+**Permissions for pick / save-as / open:** No dangerous storage permissions (`READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE` / media permissions) are required. Those APIs use the system document picker (SAF).
+
+**Permissions for `saveToGallery`:**
+
+- **API 24–28:** the plugin declares `WRITE_EXTERNAL_STORAGE` with `maxSdkVersion=28` and requests it at runtime. Denial throws `ErrorCode.permissionDenied`.
+- **API 29+:** no storage permission. The plugin inserts via MediaStore (`RELATIVE_PATH` + `IS_PENDING`).
+- **API 33+:** do **not** add `READ_MEDIA_IMAGES` / `READ_MEDIA_VIDEO` for this API. Inserting media the app creates does not need them.
+
+Do not rely on `requestLegacyExternalStorage`.
 
 **FileProvider:** The plugin registers its own `FileProvider` for opening files via content URIs. No host-app FileProvider setup is required for basic use.
 
@@ -76,7 +85,21 @@ class MainActivity : FlutterFragmentActivity()
 
 ### iOS
 
-**Permissions:** No extra Info.plist privacy keys (such as photo library usage descriptions) are required for document pick / save / open via this plugin’s document-picker APIs.
+**Permissions for document pick / save / open:** No extra Info.plist privacy keys (such as photo library usage descriptions) are required for those document-picker APIs.
+
+**Permissions for `saveToGallery`:** add to the host `Info.plist`:
+
+```xml
+<key>NSPhotoLibraryAddUsageDescription</key>
+<string>This app saves images and videos to your photo library.</string>
+```
+
+If you pass `albumName` (create / add to a custom album), also add:
+
+```xml
+<key>NSPhotoLibraryUsageDescription</key>
+<string>This app saves images and videos to albums in your photo library.</string>
+```
 
 **Directory access:** When the user picks a directory, the plugin stores a security-scoped bookmark in `DirectoryResult.identifier` (prefixed). Prefer that identifier for later access or `openFile`; the display `path` alone is not durable across app launches.
 
@@ -89,15 +112,24 @@ class MainActivity : FlutterFragmentActivity()
 <true/>
 ```
 
+For `saveToGallery` (Photos library), also add:
+
+```xml
+<key>com.apple.security.personal-information.photos-library</key>
+<true/>
+```
+
+And the same `NSPhotoLibraryAddUsageDescription` / `NSPhotoLibraryUsageDescription` keys as on iOS (in `macos/Runner/Info.plist`).
+
 See the example app entitlements under `example/macos/Runner/`.
 
 ### Windows
 
-**Permissions:** None. Uses native system file and folder dialogs. No extra manifest entries are required for this plugin.
+**Permissions:** None. Uses native system file and folder dialogs. `saveToGallery` writes to the user Pictures or Videos known folder. No extra manifest entries are required for this plugin.
 
 ### Linux
 
-**Permissions:** None. Uses native system file and folder dialogs. No extra desktop permissions are required for this plugin.
+**Permissions:** None. Uses native system file and folder dialogs. `saveToGallery` writes to XDG Pictures or Videos (there is no system photo library). No extra desktop permissions are required for this plugin.
 
 ### Web
 
@@ -108,6 +140,7 @@ See the example app entitlements under `example/macos/Runner/`.
 - `path` is always `null`
 - Picked files always include `bytes`
 - `saveFile` requires `bytes` (`sourcePath` is not supported)
+- `saveToGallery` is not supported (`ErrorCode.unsupported`)
 - `openFile` requires an object-URL `identifier` (for example from a previous pick); local filesystem paths are not supported
 
 ## Quick start
@@ -129,6 +162,13 @@ final dir = await ops.pickDirectory();
 // Save as
 await ops.saveFile(
   fileName: 'export.txt',
+  bytes: file?.bytes,
+  sourcePath: file?.path,
+);
+
+// Save image/video to gallery
+await ops.saveToGallery(
+  fileName: file?.name ?? 'shot.jpg',
   bytes: file?.bytes,
   sourcePath: file?.path,
 );
@@ -244,6 +284,37 @@ Future<SaveFileResult?> saveFile({
 - `ErrorCode.invalidArgs` if both `bytes` and `sourcePath` are missing / empty
 - `ErrorCode.unsupported` on Web when `bytes` is null (e.g. only `sourcePath` provided)
 
+### `saveToGallery`
+
+Save an image or video to the system gallery (or Pictures/Videos on desktop). There is no cancel dialog; failures throw.
+
+```dart
+Future<SaveToGalleryResult> saveToGallery({
+  required String fileName,
+  Uint8List? bytes,
+  String? sourcePath,
+  GalleryMediaType? type,
+  String? albumName,
+})
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `fileName` | `String` | *(required)* | Display name including extension (used for MIME / type inference). |
+| `bytes` | `Uint8List?` | `null` | File contents to write. Provide `bytes` and/or `sourcePath`. |
+| `sourcePath` | `String?` | `null` | Path (or Android `content://` URI) of an existing image/video to copy. |
+| `type` | `GalleryMediaType?` | inferred | `image` or `video`. Inferred from `fileName` / `sourcePath` when omitted. |
+| `albumName` | `String?` | `null` | Optional album / subdirectory. Custom albums on iOS/macOS require full photo library access. |
+
+**Returns:** `SaveToGalleryResult` — `name`, optional filesystem `path`, and native `identifier`.
+
+**Throws:**
+
+- `ErrorCode.invalidArgs` if both `bytes` and `sourcePath` are missing, or the media type cannot be inferred
+- `ErrorCode.permissionDenied` if gallery / storage permission is denied
+- `ErrorCode.unsupported` on Web
+- `ErrorCode.notFound` / `ErrorCode.ioError` on I/O failures
+
 ### `openFile`
 
 Open a file with the system default application.
@@ -298,6 +369,16 @@ Result of `saveFile`.
 | `name` | `String` | Saved file name (e.g. download name on Web) |
 | `path` | `String?` | Absolute path on mobile/desktop; `null` on Web |
 
+### `SaveToGalleryResult`
+
+Result of `saveToGallery`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `String` | Final file name |
+| `path` | `String?` | Absolute path on desktop (and Android API 24–28); usually `null` on Android 10+ |
+| `identifier` | `String?` | Android `content://` URI, iOS/macOS Photos `localIdentifier`, or `file://` URI on desktop |
+
 ### `FileType`
 
 High-level filter for pick dialogs:
@@ -309,6 +390,13 @@ High-level filter for pick dialogs:
 | `FileType.video` | Videos |
 | `FileType.audio` | Audio |
 | `FileType.custom` | Rely on `allowedExtensions` / `allowedMimeTypes` |
+
+### `GalleryMediaType`
+
+| Value | Meaning |
+|-------|---------|
+| `GalleryMediaType.image` | Image |
+| `GalleryMediaType.video` | Video |
 
 ## Errors
 

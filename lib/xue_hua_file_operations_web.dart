@@ -9,8 +9,10 @@ import 'src/errors/error_code.dart';
 import 'src/errors/file_operations_exception.dart';
 import 'src/models/directory_result.dart';
 import 'src/models/file_type.dart';
+import 'src/models/gallery_media_type.dart';
 import 'src/models/platform_file.dart';
 import 'src/models/save_file_result.dart';
+import 'src/models/save_to_gallery_result.dart';
 import 'xue_hua_file_operations_platform_interface.dart';
 
 /// Web implementation using HTML file input / Blob download.
@@ -214,6 +216,20 @@ class XueHuaFileOperationsWeb extends XueHuaFileOperationsPlatform {
     web.URL.revokeObjectURL(url);
 
     return SaveFileResult(name: fileName, path: null);
+  }
+
+  @override
+  Future<SaveToGalleryResult> saveToGallery({
+    required String fileName,
+    Uint8List? bytes,
+    String? sourcePath,
+    required GalleryMediaType type,
+    String? albumName,
+  }) {
+    throw FileOperationsException(
+      ErrorCode.unsupported,
+      message: 'saveToGallery is not supported on Web',
+    );
   }
 
   @override

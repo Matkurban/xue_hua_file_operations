@@ -5,8 +5,10 @@ import 'src/errors/error_code.dart';
 import 'src/errors/file_operations_exception.dart';
 import 'src/models/directory_result.dart';
 import 'src/models/file_type.dart';
+import 'src/models/gallery_media_type.dart';
 import 'src/models/platform_file.dart';
 import 'src/models/save_file_result.dart';
+import 'src/models/save_to_gallery_result.dart';
 import 'xue_hua_file_operations_platform_interface.dart';
 
 /// MethodChannel implementation of [XueHuaFileOperationsPlatform].
@@ -125,6 +127,33 @@ class MethodChannelXueHuaFileOperations extends XueHuaFileOperationsPlatform {
         });
     if (result == null) return null;
     return SaveFileResult.fromMap(result);
+  }
+
+  @override
+  Future<SaveToGalleryResult> saveToGallery({
+    required String fileName,
+    Uint8List? bytes,
+    String? sourcePath,
+    required GalleryMediaType type,
+    String? albumName,
+  }) async {
+    final result = await _invoke<Map<Object?, Object?>>(
+      'saveToGallery',
+      <String, Object?>{
+        'fileName': fileName,
+        'bytes': ?bytes,
+        'sourcePath': ?sourcePath,
+        'type': type.wireName,
+        'albumName': ?albumName,
+      },
+    );
+    if (result == null) {
+      throw FileOperationsException(
+        ErrorCode.unknown,
+        message: 'saveToGallery returned no result',
+      );
+    }
+    return SaveToGalleryResult.fromMap(result);
   }
 
   @override

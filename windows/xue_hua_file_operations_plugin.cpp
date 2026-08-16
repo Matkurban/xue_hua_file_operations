@@ -1,6 +1,8 @@
 #include "xue_hua_file_operations_plugin.h"
 
 #include <windows.h>
+#include <knownfolders.h>
+#include <shlobj.h>
 #include <shobjidl.h>
 #include <shellapi.h>
 
@@ -446,6 +448,115 @@ void OpenFile(const EncodableMap *args,
   result->Success(EncodableValue(true));
 }
 
+std::filesystem::path UniqueDestPath(const std::filesystem::path &dir,
+                                     const std::wstring &file_name) {
+  std::filesystem::path dest = dir / file_name;
+  if (!std::filesystem::exists(dest)) {
+    return dest;
+  }
+  const auto stem = dest.stem().wstring();
+  const auto ext = dest.extension().wstring();
+  for (int i = 1;; ++i) {
+    auto candidate = dir / (stem + L"_" + std::to_wstring(i) + ext);
+    if (!std::filesystem::exists(candidate)) {
+      return candidate;
+    }
+  }
+}
+
+std::wstring SanitizeAlbumName(const std::string &album) {
+  std::wstring wide = Utf8ToWide(album);
+  for (auto &ch : wide) {
+    if (ch == L'\\' || ch == L'/' || ch == L':' || ch == L'*' || ch == L'?' ||
+        ch == L'"' || ch == L'<' || ch == L'>' || ch == L'|') {
+      ch = L'_';
+    }
+  }
+  return wide;
+}
+
+void SaveToGallery(
+    const EncodableMap *args,
+    std::unique_ptr<flutter::MethodResult<EncodableValue>> result) {
+  std::string file_name = GetStringArg(args, "fileName");
+  if (file_name.empty()) file_name = "file";
+  std::string source_path = GetStringArg(args, "sourcePath");
+  const auto *bytes = GetBytesArg(args, "bytes");
+  std::string type = GetStringArg(args, "type");
+  std::string album_name = GetStringArg(args, "albumName");
+
+  if (!bytes && source_path.empty()) {
+    result->Error("invalid_args", "Either bytes or sourcePath must be provided");
+    return;
+  }
+  if (type != "image" && type != "video") {
+    result->Error("invalid_args", "type must be image or video");
+    return;
+  }
+
+  PWSTR folder = nullptr;
+  HRESULT hr = SHGetKnownFolderPath(
+      type == "video" ? FOLDERID_Videos : FOLDERID_Pictures, 0, nullptr,
+      &folder);
+  if (FAILED(hr) || !folder) {
+    result->Error("io_error", "Unable to resolve Pictures/Videos folder");
+    return;
+  }
+
+  std::filesystem::path dest_dir(folder);
+  CoTaskMemFree(folder);
+
+  if (!album_name.empty()) {
+    dest_dir /= SanitizeAlbumName(album_name);
+  }
+
+  std::error_code ec;
+  std::filesystem::create_directories(dest_dir, ec);
+  if (ec) {
+    result->Error("io_error", "Unable to create gallery directory");
+    return;
+  }
+
+  std::filesystem::path dest =
+      UniqueDestPath(dest_dir, Utf8ToWide(file_name));
+
+  try {
+    if (bytes) {
+      std::ofstream out(dest, std::ios::binary);
+      if (!out) {
+        result->Error("io_error", "Unable to open destination file");
+        return;
+      }
+      out.write(reinterpret_cast<const char *>(bytes->data()),
+                static_cast<std::streamsize>(bytes->size()));
+    } else {
+      std::filesystem::path source(Utf8ToWide(source_path));
+      if (!std::filesystem::exists(source)) {
+        result->Error("not_found", "File not found");
+        return;
+      }
+      std::filesystem::copy_file(
+          source, dest, std::filesystem::copy_options::overwrite_existing);
+    }
+  } catch (const std::exception &e) {
+    result->Error("io_error", e.what());
+    return;
+  }
+
+  const std::wstring dest_wide = dest.wstring();
+  SHChangeNotify(SHCNE_CREATE, SHCNF_PATHW, dest_wide.c_str(), nullptr);
+  SHChangeNotify(SHCNE_UPDATEDIR, SHCNF_PATHW, dest_dir.wstring().c_str(),
+                 nullptr);
+
+  EncodableMap map;
+  map[EncodableValue("name")] =
+      EncodableValue(WideToUtf8(dest.filename().wstring()));
+  map[EncodableValue("path")] = EncodableValue(WideToUtf8(dest_wide));
+  map[EncodableValue("identifier")] =
+      EncodableValue(std::string("file:///") + WideToUtf8(dest_wide));
+  result->Success(EncodableValue(map));
+}
+
 }  // namespace
 
 void XueHuaFileOperationsPlugin::RegisterWithRegistrar(
@@ -487,6 +598,8 @@ void XueHuaFileOperationsPlugin::HandleMethodCall(
     PickDirectory(registrar_, args, std::move(result));
   } else if (method == "saveFile") {
     SaveFile(registrar_, args, std::move(result));
+  } else if (method == "saveToGallery") {
+    SaveToGallery(args, std::move(result));
   } else if (method == "openFile") {
     OpenFile(args, std::move(result));
   } else {

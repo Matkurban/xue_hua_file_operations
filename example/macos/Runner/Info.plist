@@ -28,5 +28,9 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>This app saves images and videos to your photo library.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app saves images and videos to albums in your photo library.</string>
 </dict>
 </plist>

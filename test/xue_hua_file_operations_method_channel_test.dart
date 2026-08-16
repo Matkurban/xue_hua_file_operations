@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:xue_hua_file_operations/src/errors/error_code.dart';
 import 'package:xue_hua_file_operations/src/errors/file_operations_exception.dart';
 import 'package:xue_hua_file_operations/src/models/file_type.dart';
+import 'package:xue_hua_file_operations/src/models/gallery_media_type.dart';
 import 'package:xue_hua_file_operations/xue_hua_file_operations_method_channel.dart';
 
 void main() {
@@ -155,6 +156,39 @@ void main() {
     expect(args['dialogTitle'], 'Save');
     expect(saved?.name, 'out.bin');
     expect(saved?.path, '/tmp/out.bin');
+  });
+
+  test('saveToGallery encodes args and decodes', () async {
+    late MethodCall captured;
+    final bytes = Uint8List.fromList([9, 8, 7]);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+          captured = methodCall;
+          return {
+            'name': 'shot.jpg',
+            'path': null,
+            'identifier': 'content://media/external/images/media/1',
+          };
+        });
+
+    final saved = await platform.saveToGallery(
+      fileName: 'shot.jpg',
+      bytes: bytes,
+      sourcePath: '/tmp/shot.jpg',
+      type: GalleryMediaType.image,
+      albumName: 'XueHua',
+    );
+
+    expect(captured.method, 'saveToGallery');
+    final args = captured.arguments as Map;
+    expect(args['fileName'], 'shot.jpg');
+    expect(args['bytes'], bytes);
+    expect(args['sourcePath'], '/tmp/shot.jpg');
+    expect(args['type'], 'image');
+    expect(args['albumName'], 'XueHua');
+    expect(saved.name, 'shot.jpg');
+    expect(saved.path, isNull);
+    expect(saved.identifier, 'content://media/external/images/media/1');
   });
 
   test('openFile encodes path and identifier', () async {

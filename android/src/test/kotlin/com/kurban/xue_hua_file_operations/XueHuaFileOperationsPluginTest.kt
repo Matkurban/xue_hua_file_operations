@@ -16,4 +16,20 @@ internal class XueHuaFileOperationsPluginTest {
 
         Mockito.verify(mockResult).notImplemented()
     }
+
+    @Test
+    fun onMethodCall_saveToGallery_missingSource_returnsInvalidArgs() {
+        val plugin = XueHuaFileOperationsPlugin()
+        val call = MethodCall(
+            "saveToGallery",
+            mapOf("fileName" to "a.jpg", "type" to "image")
+        )
+        val mockResult: MethodChannel.Result = Mockito.mock(MethodChannel.Result::class.java)
+        plugin.onMethodCall(call, mockResult)
+        Mockito.verify(mockResult).error(
+            Mockito.eq("invalid_args"),
+            Mockito.anyString(),
+            Mockito.isNull(),
+        )
+    }
 }

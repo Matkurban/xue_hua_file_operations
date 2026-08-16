@@ -4,6 +4,7 @@
 #include <glib/gstdio.h>
 #include <gtk/gtk.h>
 
+#include <cerrno>
 #include <cstring>
 #include <fstream>
 #include <string>
@@ -307,6 +308,125 @@ static FlMethodResponse* save_file(XueHuaFileOperationsPlugin* self,
   return FL_METHOD_RESPONSE(fl_method_success_response_new(map));
 }
 
+static std::string unique_dest_path(const std::string& dir,
+                                    const std::string& file_name) {
+  g_autofree gchar* first = g_build_filename(dir.c_str(), file_name.c_str(), nullptr);
+  if (!g_file_test(first, G_FILE_TEST_EXISTS)) {
+    return first;
+  }
+
+  std::string stem = file_name;
+  std::string ext;
+  const size_t dot = file_name.rfind('.');
+  if (dot != std::string::npos && dot > 0) {
+    stem = file_name.substr(0, dot);
+    ext = file_name.substr(dot);
+  }
+  for (int i = 1;; ++i) {
+    g_autofree gchar* candidate_name =
+        g_strdup_printf("%s_%d%s", stem.c_str(), i, ext.c_str());
+    g_autofree gchar* candidate =
+        g_build_filename(dir.c_str(), candidate_name, nullptr);
+    if (!g_file_test(candidate, G_FILE_TEST_EXISTS)) {
+      return candidate;
+    }
+  }
+}
+
+static std::string sanitize_album_name(std::string album) {
+  for (char& ch : album) {
+    if (ch == '/' || ch == '\\' || ch == '\0') {
+      ch = '_';
+    }
+  }
+  return album;
+}
+
+static FlMethodResponse* save_to_gallery(FlValue* args) {
+  std::string file_name = get_string_arg(args, "fileName");
+  if (file_name.empty()) file_name = "file";
+  std::string source_path = get_string_arg(args, "sourcePath");
+  std::string type = get_string_arg(args, "type");
+  std::string album_name = get_string_arg(args, "albumName");
+
+  FlValue* bytes_value = nullptr;
+  if (args != nullptr && fl_value_get_type(args) == FL_VALUE_TYPE_MAP) {
+    bytes_value = fl_value_lookup_string(args, "bytes");
+  }
+  bool has_bytes =
+      bytes_value != nullptr &&
+      fl_value_get_type(bytes_value) == FL_VALUE_TYPE_UINT8_LIST;
+  if (!has_bytes && source_path.empty()) {
+    return FL_METHOD_RESPONSE(fl_method_error_response_new(
+        "invalid_args", "Either bytes or sourcePath must be provided",
+        nullptr));
+  }
+  if (type != "image" && type != "video") {
+    return FL_METHOD_RESPONSE(fl_method_error_response_new(
+        "invalid_args", "type must be image or video", nullptr));
+  }
+
+  GUserDirectory dir_type = type == "video" ? G_USER_DIRECTORY_VIDEOS
+                                            : G_USER_DIRECTORY_PICTURES;
+  const gchar* special = g_get_user_special_dir(dir_type);
+  std::string base;
+  if (special != nullptr && special[0] != '\0') {
+    base = special;
+  } else {
+    const gchar* home = g_get_home_dir();
+    base = std::string(home ? home : ".") +
+           (type == "video" ? "/Videos" : "/Pictures");
+  }
+
+  if (!album_name.empty()) {
+    base += "/";
+    base += sanitize_album_name(album_name);
+  }
+
+  if (g_mkdir_with_parents(base.c_str(), 0755) != 0 && errno != EEXIST) {
+    return FL_METHOD_RESPONSE(fl_method_error_response_new(
+        "io_error", "Unable to create gallery directory", nullptr));
+  }
+
+  std::string dest = unique_dest_path(base, file_name);
+  try {
+    if (has_bytes) {
+      size_t length = fl_value_get_length(bytes_value);
+      const uint8_t* data = fl_value_get_uint8_list(bytes_value);
+      std::ofstream out(dest, std::ios::binary);
+      if (!out) {
+        return FL_METHOD_RESPONSE(fl_method_error_response_new(
+            "io_error", "Unable to open destination file", nullptr));
+      }
+      out.write(reinterpret_cast<const char*>(data),
+                static_cast<std::streamsize>(length));
+    } else {
+      if (!g_file_test(source_path.c_str(), G_FILE_TEST_EXISTS)) {
+        return FL_METHOD_RESPONSE(fl_method_error_response_new(
+            "not_found", "File not found", nullptr));
+      }
+      std::ifstream input(source_path, std::ios::binary);
+      std::ofstream out(dest, std::ios::binary);
+      if (!input || !out) {
+        return FL_METHOD_RESPONSE(fl_method_error_response_new(
+            "io_error", "Failed to write file", nullptr));
+      }
+      out << input.rdbuf();
+    }
+  } catch (...) {
+    return FL_METHOD_RESPONSE(
+        fl_method_error_response_new("io_error", "Failed to write file", nullptr));
+  }
+
+  g_autofree gchar* basename = g_path_get_basename(dest.c_str());
+  g_autofree gchar* identifier = g_strdup_printf("file://%s", dest.c_str());
+  g_autoptr(FlValue) map = fl_value_new_map();
+  fl_value_set_string_take(map, "path", fl_value_new_string(dest.c_str()));
+  fl_value_set_string_take(map, "name", fl_value_new_string(basename));
+  fl_value_set_string_take(map, "identifier", fl_value_new_string(identifier));
+  return FL_METHOD_RESPONSE(fl_method_success_response_new(map));
+}
+
 static FlMethodResponse* open_file(XueHuaFileOperationsPlugin* self,
                                    FlValue* args) {
   std::string path = get_string_arg(args, "path");
@@ -357,6 +477,8 @@ static void xue_hua_file_operations_plugin_handle_method_call(
     response = pick_directory(self, args);
   } else if (strcmp(method, "saveFile") == 0) {
     response = save_file(self, args);
+  } else if (strcmp(method, "saveToGallery") == 0) {
+    response = save_to_gallery(args);
   } else if (strcmp(method, "openFile") == 0) {
     response = open_file(self, args);
   } else {

@@ -58,6 +58,21 @@ class MockXueHuaFileOperationsPlatform
   }
 
   @override
+  Future<SaveToGalleryResult> saveToGallery({
+    required String fileName,
+    Uint8List? bytes,
+    String? sourcePath,
+    required GalleryMediaType type,
+    String? albumName,
+  }) async {
+    return SaveToGalleryResult(
+      name: fileName,
+      path: '/tmp/$fileName',
+      identifier: 'file:///tmp/$fileName',
+    );
+  }
+
+  @override
   Future<void> openFile({String? path, String? identifier}) async {}
 }
 
@@ -124,6 +139,47 @@ void main() {
     expect(
       () => XueHuaFileOperations.instance.saveFile(fileName: 'a.txt'),
       throwsA(isA<FileOperationsException>()),
+    );
+  });
+
+  test('saveToGallery requires bytes or sourcePath', () async {
+    expect(
+      () => XueHuaFileOperations.instance.saveToGallery(fileName: 'a.jpg'),
+      throwsA(
+        isA<FileOperationsException>().having(
+          (e) => e.code,
+          'code',
+          ErrorCode.invalidArgs,
+        ),
+      ),
+    );
+  });
+
+  test('saveToGallery infers type and delegates', () async {
+    final fake = MockXueHuaFileOperationsPlatform();
+    XueHuaFileOperationsPlatform.instance = fake;
+
+    final saved = await XueHuaFileOperations.instance.saveToGallery(
+      fileName: 'shot.png',
+      bytes: Uint8List.fromList([1, 2, 3]),
+    );
+    expect(saved.name, 'shot.png');
+    expect(saved.path, '/tmp/shot.png');
+  });
+
+  test('saveToGallery rejects unknown extension without type', () async {
+    expect(
+      () => XueHuaFileOperations.instance.saveToGallery(
+        fileName: 'notes.txt',
+        bytes: Uint8List.fromList([1]),
+      ),
+      throwsA(
+        isA<FileOperationsException>().having(
+          (e) => e.code,
+          'code',
+          ErrorCode.invalidArgs,
+        ),
+      ),
     );
   });
 }

@@ -4,8 +4,10 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'src/models/directory_result.dart';
 import 'src/models/file_type.dart';
+import 'src/models/gallery_media_type.dart';
 import 'src/models/platform_file.dart';
 import 'src/models/save_file_result.dart';
+import 'src/models/save_to_gallery_result.dart';
 import 'xue_hua_file_operations_method_channel.dart';
 
 abstract class XueHuaFileOperationsPlatform extends PlatformInterface {
@@ -56,6 +58,16 @@ abstract class XueHuaFileOperationsPlatform extends PlatformInterface {
     String? dialogTitle,
   }) {
     throw UnimplementedError('saveFile() has not been implemented.');
+  }
+
+  Future<SaveToGalleryResult> saveToGallery({
+    required String fileName,
+    Uint8List? bytes,
+    String? sourcePath,
+    required GalleryMediaType type,
+    String? albumName,
+  }) {
+    throw UnimplementedError('saveToGallery() has not been implemented.');
   }
 
   Future<void> openFile({String? path, String? identifier}) {

@@ -1,17 +1,23 @@
 package com.kurban.xue_hua_file_operations
 
+import android.Manifest
 import android.content.ActivityNotFoundException
 import android.app.Activity
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -23,7 +29,9 @@ import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
 import java.io.File
 import java.io.FileInputStream
+import java.io.FileNotFoundException
 import java.io.FileOutputStream
+import kotlin.concurrent.thread
 
 class XueHuaFileOperationsPlugin :
     FlutterPlugin,
@@ -31,6 +39,7 @@ class XueHuaFileOperationsPlugin :
     ActivityAware {
 
     private lateinit var channel: MethodChannel
+    private var applicationContext: Context? = null
     private var activity: Activity? = null
     private var pendingResult: Result? = null
     private var pendingWithData: Boolean = false
@@ -38,10 +47,20 @@ class XueHuaFileOperationsPlugin :
     private var pendingSaveBytes: ByteArray? = null
     private var pendingSaveSourcePath: String? = null
     private var pendingSaveFileName: String = "file"
+    private var pendingGalleryRequest: GalleryRequest? = null
     private var openDocumentLauncher: ActivityResultLauncher<Array<String>>? = null
     private var openMultipleDocumentsLauncher: ActivityResultLauncher<Array<String>>? = null
     private var openDocumentTreeLauncher: ActivityResultLauncher<Uri?>? = null
     private var createDocumentLauncher: ActivityResultLauncher<Pair<String, String>>? = null
+    private var writeStoragePermissionLauncher: ActivityResultLauncher<String>? = null
+
+    private class GalleryRequest(
+        val fileName: String,
+        val bytes: ByteArray?,
+        val sourcePath: String?,
+        val type: String,
+        val albumName: String?,
+    )
 
     /** CreateDocument with dynamic MIME type + suggested file name. */
     private class CreateDocumentContract :
@@ -60,6 +79,7 @@ class XueHuaFileOperationsPlugin :
     }
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
+        applicationContext = flutterPluginBinding.applicationContext
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, "xue_hua_file_operations")
         channel.setMethodCallHandler(this)
     }
@@ -70,6 +90,7 @@ class XueHuaFileOperationsPlugin :
             "pickFiles" -> pickFiles(call, result)
             "pickDirectory" -> pickDirectory(result)
             "saveFile" -> saveFile(call, result)
+            "saveToGallery" -> saveToGallery(call, result)
             "openFile" -> openFile(call, result)
             else -> result.notImplemented()
         }
@@ -161,6 +182,115 @@ class XueHuaFileOperationsPlugin :
 
         val mime = guessMime(fileName, call.argument<List<String>>("allowedExtensions"))
         launcher.launch(mime to fileName)
+    }
+
+    private fun saveToGallery(call: MethodCall, result: Result) {
+        val fileName = call.argument<String>("fileName") ?: "file"
+        val bytes = call.argument<ByteArray>("bytes")
+        val sourcePath = call.argument<String>("sourcePath")
+        val type = call.argument<String>("type")
+        val albumName = call.argument<String>("albumName")
+
+        if (bytes == null && sourcePath.isNullOrEmpty()) {
+            result.error("invalid_args", "Either bytes or sourcePath must be provided", null)
+            return
+        }
+        if (type != "image" && type != "video") {
+            result.error("invalid_args", "type must be image or video", null)
+            return
+        }
+
+        val request = GalleryRequest(fileName, bytes, sourcePath, type, albumName)
+        if (Build.VERSION.SDK_INT <= 28) {
+            val act = activity
+            if (act == null) {
+                result.error("unknown", "Activity is not available", null)
+                return
+            }
+            val granted = ContextCompat.checkSelfPermission(
+                act,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                val launcher = writeStoragePermissionLauncher
+                if (launcher == null) {
+                    result.error(
+                        "unsupported",
+                        "Host Activity must extend FlutterFragmentActivity (ComponentActivity) " +
+                                "to request storage permission",
+                        null
+                    )
+                    return
+                }
+                if (pendingResult != null) {
+                    result.error("invalid_args", "Another file operation is in progress", null)
+                    return
+                }
+                pendingResult = result
+                pendingGalleryRequest = request
+                launcher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                return
+            }
+        }
+
+        executeGallerySave(request, result)
+    }
+
+    private fun executeGallerySave(request: GalleryRequest, result: Result) {
+        val ctx = activity ?: applicationContext
+        if (ctx == null) {
+            result.error("unknown", "Context is not available", null)
+            return
+        }
+        thread {
+            try {
+                val saved = GallerySaver(ctx).save(
+                    fileName = request.fileName,
+                    bytes = request.bytes,
+                    sourcePath = request.sourcePath,
+                    type = request.type,
+                    albumName = request.albumName,
+                )
+                Handler(Looper.getMainLooper()).post {
+                    result.success(
+                        mapOf(
+                            "name" to saved.name,
+                            "path" to saved.path,
+                            "identifier" to saved.identifier,
+                        )
+                    )
+                }
+            } catch (e: FileNotFoundException) {
+                Handler(Looper.getMainLooper()).post {
+                    result.error("not_found", e.message, null)
+                }
+            } catch (e: SecurityException) {
+                Handler(Looper.getMainLooper()).post {
+                    result.error("permission_denied", e.message, null)
+                }
+            } catch (e: IllegalArgumentException) {
+                Handler(Looper.getMainLooper()).post {
+                    result.error("invalid_args", e.message, null)
+                }
+            } catch (e: Exception) {
+                Handler(Looper.getMainLooper()).post {
+                    result.error("io_error", e.message, null)
+                }
+            }
+        }
+    }
+
+    private fun onWriteStoragePermissionResult(granted: Boolean) {
+        val request = pendingGalleryRequest
+        val res = pendingResult
+        pendingGalleryRequest = null
+        pendingResult = null
+        if (res == null || request == null) return
+        if (!granted) {
+            res.error("permission_denied", "WRITE_EXTERNAL_STORAGE was denied", null)
+            return
+        }
+        executeGallerySave(request, res)
     }
 
     private fun guessMime(fileName: String, extensions: List<String>?): String {
@@ -479,6 +609,7 @@ class XueHuaFileOperationsPlugin :
         pendingSaveBytes = null
         pendingSaveSourcePath = null
         pendingSaveFileName = "file"
+        pendingGalleryRequest = null
     }
 
     private fun registerLaunchers(componentActivity: ComponentActivity) {
@@ -500,6 +631,10 @@ class XueHuaFileOperationsPlugin :
             "xue_hua_file_operations/create_document",
             CreateDocumentContract()
         ) { uri -> onCreateDocumentResult(uri) }
+        writeStoragePermissionLauncher = registry.register(
+            "xue_hua_file_operations/write_storage_permission",
+            ActivityResultContracts.RequestPermission()
+        ) { granted -> onWriteStoragePermissionResult(granted) }
     }
 
     private fun unregisterLaunchers() {
@@ -507,14 +642,17 @@ class XueHuaFileOperationsPlugin :
         openMultipleDocumentsLauncher?.unregister()
         openDocumentTreeLauncher?.unregister()
         createDocumentLauncher?.unregister()
+        writeStoragePermissionLauncher?.unregister()
         openDocumentLauncher = null
         openMultipleDocumentsLauncher = null
         openDocumentTreeLauncher = null
         createDocumentLauncher = null
+        writeStoragePermissionLauncher = null
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
+        applicationContext = null
     }
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
