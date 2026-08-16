@@ -149,7 +149,8 @@ class XueHuaFileOperations {
   /// Current gallery permission without showing a system prompt.
   ///
   /// Pass [forAlbum] `true` when you will call [saveToGallery] with an
-  /// [albumName]. On Web this always returns [GalleryPermissionStatus.granted].
+  /// [albumName]. On macOS this is ignored (PhotoKit is always `readWrite`).
+  /// On Web this always returns [GalleryPermissionStatus.granted].
   Future<GalleryPermissionStatus> galleryPermissionStatus({
     bool forAlbum = false,
   }) {
@@ -160,13 +161,18 @@ class XueHuaFileOperations {
   ///
   /// Returns the new [GalleryPermissionStatus]. Denial is a status, not an
   /// exception. Pass [forAlbum] `true` when you need read access to create or
-  /// look up a custom album. On Web this always returns
+  /// look up a custom album. On macOS this is ignored (PhotoKit is always
+  /// `readWrite`). On Web this always returns
   /// [GalleryPermissionStatus.granted].
   ///
   /// On iOS / macOS the system dialog appears only while PhotoKit status is
   /// `notDetermined`. If the result is [GalleryPermissionStatus.permanentlyDenied]
   /// or [GalleryPermissionStatus.restricted], call [openAppSettings] so the
   /// user can change Photos access.
+  ///
+  /// On macOS, launching via Cursor/VS Code can silently deny Photos (TCC
+  /// attributes the request to the IDE). Prefer the system Terminal or opening
+  /// the built `.app`.
   Future<GalleryPermissionStatus> requestGalleryPermission({
     bool forAlbum = false,
   }) {

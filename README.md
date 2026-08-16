@@ -129,7 +129,17 @@ And the same `NSPhotoLibraryAddUsageDescription` / `NSPhotoLibraryUsageDescripti
 
 Without the Photos entitlement, PhotoKit often returns `.denied` immediately and never shows a prompt.
 
-Same one-shot prompt rule as iOS. After a denial, `openAppSettings()` opens System Settings → Privacy & Security → Photos (a convenience URL, not an Apple `openSettingsURLString` equivalent). To reset during development:
+Same one-shot prompt rule as iOS. macOS always requests PhotoKit `readWrite` (`forAlbum` is ignored): System Settings → Privacy & Security → Photos only lists read/write clients. `addOnly` does not appear in that list and may return `.denied` without a prompt.
+
+**Launch path (TCC responsible process):** macOS attributes Photos prompts to the parent process. If you `flutter run -d macos` from Cursor or VS Code, the system may silently deny access and **never list this app** under Photos. Test Photos from the system Terminal, or build then open the app bundle:
+
+```bash
+cd example
+flutter build macos
+open build/macos/Build/Products/Debug/xue_hua_file_operations_example.app
+```
+
+An empty Photos list after a request means TCC did not record this app; resetting the bundle ID will not fix that. After a real denial, `openAppSettings()` opens that Photos pane (a convenience URL, not an Apple `openSettingsURLString` equivalent). To reset a recorded decision during development:
 
 ```bash
 tccutil reset Photos com.your.bundle.id
@@ -365,7 +375,7 @@ Saving without a custom album is allowed when `status.isGranted || status.isLimi
 | Platform | Typical result |
 |----------|----------------|
 | iOS | PhotoKit `addOnly` or `readWrite` (`forAlbum`) |
-| macOS | PhotoKit `addOnly` or `readWrite` (`forAlbum`), same as iOS |
+| macOS | Always PhotoKit `readWrite` (`forAlbum` ignored; no add-only row in System Settings → Photos) |
 | Android 24–28 | `WRITE_EXTERNAL_STORAGE` |
 | Android 29+ | Always `granted` (no `READ_MEDIA_*`) |
 | Windows / Linux | Always `granted` |

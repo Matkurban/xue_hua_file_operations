@@ -1,8 +1,10 @@
 ## 1.2.0
 
-* iOS / macOS: call `PHPhotoLibrary.requestAuthorization` only while status is `notDetermined`; already-denied access returns `permanentlyDenied` without a second system dialog.
-* macOS gallery permission now uses PhotoKit `addOnly` or `readWrite` from `forAlbum` / `albumName`, matching iOS.
+* iOS / macOS: always call `PHPhotoLibrary.requestAuthorization` so TCC can record this app (do not skip when `authorizationStatus` is already `.denied`).
+* macOS gallery permission always uses PhotoKit `readWrite` (`forAlbum` is ignored). System Settings → Photos only lists read/write clients.
+* Copy gallery media into the app temp directory before PhotoKit import (security-scoped read on macOS).
 * Add `openAppSettings()` to open the app or Photos privacy settings after `permanentlyDenied` / `restricted`.
+* Document that `flutter run -d macos` from Cursor/VS Code can silently deny Photos (TCC responsible process).
 
 ## 1.1.1
 

@@ -16,6 +16,7 @@ A new Flutter project.
   s.source_files = 'xue_hua_file_operations/Sources/xue_hua_file_operations/**/*'
   s.dependency 'Flutter'
   s.platform = :ios, '14.0'
+  s.frameworks = 'Photos'
 
   # Flutter.framework does not contain a i386 slice.
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386' }

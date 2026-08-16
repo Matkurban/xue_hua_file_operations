@@ -129,7 +129,17 @@ PhotoKit **仅在状态为 `notDetermined` 时**弹出系统授权框。用户�
 
 若缺少 Photos entitlement，PhotoKit 常会立刻返回 `.denied` 且永不弹框。
 
-与 iOS 相同：系统只弹一次授权框。拒绝后 `openAppSettings()` 会打开「系统设置 → 隐私与安全性 → 照片」（便捷 URL，不是 Apple 的 `openSettingsURLString` 等价 API）。开发时重置：
+与 iOS 相同：系统只弹一次授权框。macOS 始终申请 PhotoKit `readWrite`（忽略 `forAlbum`）：系统设置 → 隐私与安全性 → 照片只列出读/写客户端。`addOnly` 不会出现在该列表，且可能在从未弹框时就返回 `.denied`。
+
+**启动方式（TCC 责任进程）：** macOS 会把照片授权框记到父进程上。若从 Cursor / VS Code 执行 `flutter run -d macos`，系统可能静默拒绝，并且 **不会** 把本应用列在「照片」里。请用系统「终端」测试，或先构建再打开 `.app`：
+
+```bash
+cd example
+flutter build macos
+open build/macos/Build/Products/Debug/xue_hua_file_operations_example.app
+```
+
+请求之后「照片」列表仍为空，说明 TCC 没有记到本 App，再 `tccutil reset` 这个 bundle id 也修不好。真正拒绝之后，`openAppSettings()` 会打开该「照片」页（便捷 URL，不是 Apple 的 `openSettingsURLString` 等价 API）。开发时若已有记录，可重置：
 
 ```bash
 tccutil reset Photos com.your.bundle.id
@@ -365,7 +375,7 @@ Future<GalleryPermissionStatus> requestGalleryPermission({bool forAlbum = false}
 | 平台 | 典型行为 |
 |------|----------|
 | iOS | PhotoKit `addOnly`，`forAlbum` 时为 `readWrite` |
-| macOS | 与 iOS 相同：`addOnly` 或 `readWrite`（`forAlbum`） |
+| macOS | 始终 PhotoKit `readWrite`（忽略 `forAlbum`；系统设置「照片」没有 add-only 项） |
 | Android 24–28 | `WRITE_EXTERNAL_STORAGE` |
 | Android 29+ | 始终 `granted`（不申请 `READ_MEDIA_*`） |
 | Windows / Linux | 始终 `granted` |

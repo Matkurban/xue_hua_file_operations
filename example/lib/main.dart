@@ -1,5 +1,4 @@
-import 'dart:typed_data';
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:xue_hua_file_operations/xue_hua_file_operations.dart';
 
@@ -167,8 +166,12 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
       setState(() => _status = e.toString());
       if (e.code == ErrorCode.permissionDenied) {
         await _offerOpenSettings(
-          'Photo library access was denied. The system will not ask again; '
-          'enable Photos for this app in Settings.',
+          _isMacOS
+              ? 'Photo library access was denied. If System Settings → Photos '
+                    'is empty, quit and launch this app from Terminal or the '
+                    '.app (not from Cursor/VS Code), then try again.'
+              : 'Photo library access was denied. The system will not ask again; '
+                    'enable Photos for this app in Settings.',
         );
       }
     }
@@ -189,8 +192,7 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
         status.isRestricted
             ? 'Photos access is restricted (for example by parental controls). '
                   'It cannot be changed from a permission dialog.'
-            : 'The system will not show the Photos prompt again. '
-                  'Enable Photos for this app in Settings.',
+            : _permanentlyDeniedMessage(),
       );
     }
   });
@@ -204,12 +206,26 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
       case GalleryPermissionStatus.denied:
         return '$prefix: denied (not determined yet; Request can still show a system dialog)';
       case GalleryPermissionStatus.permanentlyDenied:
-        return '$prefix: permanentlyDenied (no system dialog; use Open Settings)';
+        return '$prefix: permanentlyDenied (no system dialog; '
+            '${_isMacOS ? 'launch from Terminal or the .app, then retry' : 'use Open Settings'})';
       case GalleryPermissionStatus.restricted:
         return '$prefix: restricted (OS blocked Photos access)';
       default:
         return '$prefix: ${status.name}';
     }
+  }
+
+  bool get _isMacOS => !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
+
+  String _permanentlyDeniedMessage() {
+    if (_isMacOS) {
+      return 'The system will not show the Photos prompt again from this '
+          'launch. If System Settings → Photos is empty, quit this app and '
+          'start it from Terminal (`flutter run -d macos`) or by opening the '
+          '.app — not from Cursor/VS Code — then request permission again.';
+    }
+    return 'The system will not show the Photos prompt again. '
+        'Enable Photos for this app in Settings.';
   }
 
   Future<void> _offerOpenSettings(String message) async {

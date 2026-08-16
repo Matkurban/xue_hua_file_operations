@@ -3,11 +3,11 @@ import Photos
 
 enum GallerySaver {
     static func permissionStatus(call: FlutterMethodCall, result: @escaping FlutterResult) {
-        result(wireName(for: PHPhotoLibrary.authorizationStatus(for: accessLevel(from: call))))
+        result(wireName(for: PHPhotoLibrary.authorizationStatus(for: .readWrite)))
     }
 
     static func requestPermission(call: FlutterMethodCall, result: @escaping FlutterResult) {
-        requestAccess(accessLevel(from: call)) { status in
+        requestAccess(.readWrite) { status in
             result(wireName(for: status))
         }
     }
@@ -47,8 +47,8 @@ enum GallerySaver {
                 bytes: flutterData?.data,
                 sourcePath: sourcePath
             )
-            let accessLevel: PHAccessLevel = wantsAlbum ? .readWrite : .addOnly
-            requestAccess(accessLevel) { status in
+            // macOS Photos has no add-only toggle; always request readWrite.
+            requestAccess(.readWrite) { status in
                 switch status {
                 case .authorized:
                     let existingAlbum: PHAssetCollection?
@@ -59,7 +59,7 @@ enum GallerySaver {
                     }
                     performSave(
                         fileURL: fileURL,
-                        createdTemp: fileURL.path != sourcePath,
+                        createdTemp: true,
                         isVideo: isVideo,
                         albumName: wantsAlbum ? albumName : nil,
                         existingAlbum: existingAlbum,
@@ -68,7 +68,7 @@ enum GallerySaver {
                 case .limited:
                     performSave(
                         fileURL: fileURL,
-                        createdTemp: fileURL.path != sourcePath,
+                        createdTemp: true,
                         isVideo: isVideo,
                         albumName: nil,
                         existingAlbum: nil,
@@ -84,7 +84,7 @@ enum GallerySaver {
                 default:
                     performSave(
                         fileURL: fileURL,
-                        createdTemp: fileURL.path != sourcePath,
+                        createdTemp: true,
                         isVideo: isVideo,
                         albumName: nil,
                         existingAlbum: nil,
@@ -101,11 +101,6 @@ enum GallerySaver {
         } catch {
             result(FlutterError(code: "io_error", message: error.localizedDescription, details: nil))
         }
-    }
-
-    private static func accessLevel(from call: FlutterMethodCall) -> PHAccessLevel {
-        let forAlbum = (call.arguments as? [String: Any])?["forAlbum"] as? Bool ?? false
-        return forAlbum ? .readWrite : .addOnly
     }
 
     private static func wireName(for status: PHAuthorizationStatus) -> String {
@@ -129,19 +124,12 @@ enum GallerySaver {
         _ level: PHAccessLevel,
         completion: @escaping (PHAuthorizationStatus) -> Void
     ) {
-        let finish: (PHAuthorizationStatus) -> Void = { status in
-            DispatchQueue.main.async {
-                completion(status)
-            }
-        }
         let apply = {
-            let current = PHPhotoLibrary.authorizationStatus(for: level)
-            // Apple only shows the system prompt while status is notDetermined.
-            if current != .notDetermined {
-                finish(current)
-                return
+            PHPhotoLibrary.requestAuthorization(for: level) { newStatus in
+                DispatchQueue.main.async {
+                    completion(newStatus)
+                }
             }
-            PHPhotoLibrary.requestAuthorization(for: level, handler: finish)
         }
         if Thread.isMainThread {
             apply()
@@ -155,21 +143,28 @@ enum GallerySaver {
         bytes: Data?,
         sourcePath: String?
     ) throws -> URL {
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("xue_hua_gallery_\(UUID().uuidString)_\(fileName)")
         if let bytes = bytes {
-            let temp = FileManager.default.temporaryDirectory
-                .appendingPathComponent("xue_hua_gallery_\(UUID().uuidString)_\(fileName)")
             try bytes.write(to: temp, options: .atomic)
             return temp
         }
         let source = URL(fileURLWithPath: sourcePath!)
-        if FileManager.default.fileExists(atPath: source.path) {
-            return source
+        let scoped = source.startAccessingSecurityScopedResource()
+        defer {
+            if scoped {
+                source.stopAccessingSecurityScopedResource()
+            }
         }
-        throw NSError(
-            domain: NSCocoaErrorDomain,
-            code: NSFileReadNoSuchFileError,
-            userInfo: [NSLocalizedDescriptionKey: "File not found: \(sourcePath!)"]
-        )
+        guard FileManager.default.fileExists(atPath: source.path) else {
+            throw NSError(
+                domain: NSCocoaErrorDomain,
+                code: NSFileReadNoSuchFileError,
+                userInfo: [NSLocalizedDescriptionKey: "File not found: \(sourcePath!)"]
+            )
+        }
+        try FileManager.default.copyItem(at: source, to: temp)
+        return temp
     }
 
     private static func fetchAlbum(named albumName: String) -> PHAssetCollection? {
