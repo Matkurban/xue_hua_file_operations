@@ -2,6 +2,16 @@ import FlutterMacOS
 import Photos
 
 enum GallerySaver {
+    static func permissionStatus(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        result(wireName(for: PHPhotoLibrary.authorizationStatus(for: .readWrite)))
+    }
+
+    static func requestPermission(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        requestAccess(.readWrite) { status in
+            result(wireName(for: status))
+        }
+    }
+
     static func save(call: FlutterMethodCall, result: @escaping FlutterResult) {
         let args = call.arguments as? [String: Any]
         let fileName = args?["fileName"] as? String ?? "file"
@@ -30,7 +40,6 @@ enum GallerySaver {
 
         let isVideo = type == "video"
         let wantsAlbum = !(albumName ?? "").isEmpty
-        let accessLevel: PHAccessLevel = wantsAlbum ? .readWrite : .addOnly
 
         do {
             let fileURL = try prepareFileURL(
@@ -38,7 +47,8 @@ enum GallerySaver {
                 bytes: flutterData?.data,
                 sourcePath: sourcePath
             )
-            requestAccess(accessLevel) { status in
+            // macOS Photos has no add-only toggle; always request readWrite.
+            requestAccess(.readWrite) { status in
                 switch status {
                 case .authorized:
                     let existingAlbum: PHAssetCollection?
@@ -56,7 +66,6 @@ enum GallerySaver {
                         result: result
                     )
                 case .limited:
-                    // Limited Photos Library cannot fetch or create user albums.
                     performSave(
                         fileURL: fileURL,
                         createdTemp: fileURL.path != sourcePath,
@@ -65,13 +74,22 @@ enum GallerySaver {
                         existingAlbum: nil,
                         result: result
                     )
-                default:
+                case .denied, .restricted:
                     cleanupTempIfNeeded(fileURL, sourcePath: sourcePath)
                     result(FlutterError(
                         code: "permission_denied",
                         message: "Photo library access was denied",
                         details: nil
                     ))
+                default:
+                    performSave(
+                        fileURL: fileURL,
+                        createdTemp: fileURL.path != sourcePath,
+                        isVideo: isVideo,
+                        albumName: nil,
+                        existingAlbum: nil,
+                        result: result
+                    )
                 }
             }
         } catch let error as NSError {
@@ -85,19 +103,38 @@ enum GallerySaver {
         }
     }
 
+    private static func wireName(for status: PHAuthorizationStatus) -> String {
+        switch status {
+        case .authorized:
+            return "granted"
+        case .limited:
+            return "limited"
+        case .restricted:
+            return "restricted"
+        case .denied:
+            return "permanentlyDenied"
+        case .notDetermined:
+            return "denied"
+        @unknown default:
+            return "denied"
+        }
+    }
+
     private static func requestAccess(
         _ level: PHAccessLevel,
         completion: @escaping (PHAuthorizationStatus) -> Void
     ) {
-        let status = PHPhotoLibrary.authorizationStatus(for: level)
-        if status == .notDetermined {
+        let apply = {
             PHPhotoLibrary.requestAuthorization(for: level) { newStatus in
                 DispatchQueue.main.async {
                     completion(newStatus)
                 }
             }
+        }
+        if Thread.isMainThread {
+            apply()
         } else {
-            completion(status)
+            DispatchQueue.main.async(execute: apply)
         }
     }
 
@@ -170,11 +207,7 @@ enum GallerySaver {
             }
             DispatchQueue.main.async {
                 if let error = error {
-                    result(FlutterError(
-                        code: "io_error",
-                        message: error.localizedDescription,
-                        details: nil
-                    ))
+                    result(flutterError(from: error))
                     return
                 }
                 guard success, let localIdentifier = localIdentifier else {
@@ -192,6 +225,24 @@ enum GallerySaver {
                 ] as [String: Any])
             }
         })
+    }
+
+    private static func flutterError(from error: Error) -> FlutterError {
+        let nsError = error as NSError
+        if nsError.domain == PHPhotosError.errorDomain &&
+            (nsError.code == 3310 || nsError.code == 3311)
+        {
+            return FlutterError(
+                code: "permission_denied",
+                message: nsError.localizedDescription,
+                details: nil
+            )
+        }
+        return FlutterError(
+            code: "io_error",
+            message: nsError.localizedDescription,
+            details: nil
+        )
     }
 
     private static func add(

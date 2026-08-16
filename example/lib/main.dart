@@ -163,6 +163,18 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
     });
   });
 
+  Future<void> _galleryStatus() => _run(() async {
+    final status = await _ops.galleryPermissionStatus();
+    if (!mounted) return;
+    setState(() => _status = 'Gallery status: ${status.name}');
+  });
+
+  Future<void> _requestGalleryPermission() => _run(() async {
+    final status = await _ops.requestGalleryPermission();
+    if (!mounted) return;
+    setState(() => _status = 'Gallery permission: ${status.name}');
+  });
+
   Future<void> _openSelected() => _run(() async {
     final file = _selected;
     if (file == null) {
@@ -221,6 +233,14 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
               OutlinedButton(
                 onPressed: _saveToGallery,
                 child: const Text('Save to Gallery'),
+              ),
+              OutlinedButton(
+                onPressed: _galleryStatus,
+                child: const Text('Gallery Status'),
+              ),
+              OutlinedButton(
+                onPressed: _requestGalleryPermission,
+                child: const Text('Request Gallery Permission'),
               ),
               OutlinedButton(
                 onPressed: _openSelected,

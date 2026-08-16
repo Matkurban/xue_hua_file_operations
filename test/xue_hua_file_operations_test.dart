@@ -74,6 +74,22 @@ class MockXueHuaFileOperationsPlatform
 
   @override
   Future<void> openFile({String? path, String? identifier}) async {}
+
+  @override
+  Future<GalleryPermissionStatus> galleryPermissionStatus({
+    bool forAlbum = false,
+  }) async {
+    return GalleryPermissionStatus.granted;
+  }
+
+  @override
+  Future<GalleryPermissionStatus> requestGalleryPermission({
+    bool forAlbum = false,
+  }) async {
+    return forAlbum
+        ? GalleryPermissionStatus.granted
+        : GalleryPermissionStatus.limited;
+  }
 }
 
 void main() {
@@ -180,6 +196,46 @@ void main() {
           ErrorCode.invalidArgs,
         ),
       ),
+    );
+  });
+
+  test('galleryPermissionStatus delegates to platform', () async {
+    final fake = MockXueHuaFileOperationsPlatform();
+    XueHuaFileOperationsPlatform.instance = fake;
+
+    final status = await XueHuaFileOperations.instance
+        .galleryPermissionStatus();
+    expect(status, GalleryPermissionStatus.granted);
+    expect(status.isGranted, isTrue);
+    expect(status.canSave, isTrue);
+  });
+
+  test('requestGalleryPermission delegates forAlbum', () async {
+    final fake = MockXueHuaFileOperationsPlatform();
+    XueHuaFileOperationsPlatform.instance = fake;
+
+    final limited = await XueHuaFileOperations.instance
+        .requestGalleryPermission();
+    expect(limited, GalleryPermissionStatus.limited);
+    expect(limited.canSave, isTrue);
+
+    final granted = await XueHuaFileOperations.instance
+        .requestGalleryPermission(forAlbum: true);
+    expect(granted.isGranted, isTrue);
+  });
+
+  test('GalleryPermissionStatus parses wire names', () {
+    expect(
+      GalleryPermissionStatus.fromWireName('granted'),
+      GalleryPermissionStatus.granted,
+    );
+    expect(
+      GalleryPermissionStatus.fromWireName('permanentlyDenied'),
+      GalleryPermissionStatus.permanentlyDenied,
+    );
+    expect(
+      GalleryPermissionStatus.fromWireName('nope'),
+      GalleryPermissionStatus.denied,
     );
   });
 }

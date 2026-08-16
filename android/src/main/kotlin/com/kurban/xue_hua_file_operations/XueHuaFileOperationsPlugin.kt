@@ -17,6 +17,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
@@ -48,6 +49,7 @@ class XueHuaFileOperationsPlugin :
     private var pendingSaveSourcePath: String? = null
     private var pendingSaveFileName: String = "file"
     private var pendingGalleryRequest: GalleryRequest? = null
+    private var pendingPermissionOnly: Boolean = false
     private var openDocumentLauncher: ActivityResultLauncher<Array<String>>? = null
     private var openMultipleDocumentsLauncher: ActivityResultLauncher<Array<String>>? = null
     private var openDocumentTreeLauncher: ActivityResultLauncher<Uri?>? = null
@@ -91,6 +93,8 @@ class XueHuaFileOperationsPlugin :
             "pickDirectory" -> pickDirectory(result)
             "saveFile" -> saveFile(call, result)
             "saveToGallery" -> saveToGallery(call, result)
+            "galleryPermissionStatus" -> result.success(galleryPermissionWireName())
+            "requestGalleryPermission" -> requestGalleryPermission(result)
             "openFile" -> openFile(call, result)
             else -> result.notImplemented()
         }
@@ -228,12 +232,82 @@ class XueHuaFileOperationsPlugin :
                 }
                 pendingResult = result
                 pendingGalleryRequest = request
+                markWriteStorageRequested()
                 launcher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
                 return
             }
         }
 
         executeGallerySave(request, result)
+    }
+
+    private fun requestGalleryPermission(result: Result) {
+        if (Build.VERSION.SDK_INT >= 29) {
+            result.success("granted")
+            return
+        }
+        val act = activity
+        if (act == null) {
+            result.error("unknown", "Activity is not available", null)
+            return
+        }
+        if (ContextCompat.checkSelfPermission(
+                act,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            result.success("granted")
+            return
+        }
+        val launcher = writeStoragePermissionLauncher
+        if (launcher == null) {
+            result.error(
+                "unsupported",
+                "Host Activity must extend FlutterFragmentActivity (ComponentActivity) " +
+                        "to request storage permission",
+                null
+            )
+            return
+        }
+        if (pendingResult != null) {
+            result.error("invalid_args", "Another file operation is in progress", null)
+            return
+        }
+        pendingResult = result
+        pendingPermissionOnly = true
+        markWriteStorageRequested()
+        launcher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+    }
+
+    private fun galleryPermissionWireName(): String {
+        if (Build.VERSION.SDK_INT >= 29) {
+            return "granted"
+        }
+        val ctx = activity ?: applicationContext ?: return "denied"
+        val granted = ContextCompat.checkSelfPermission(
+            ctx,
+            Manifest.permission.WRITE_EXTERNAL_STORAGE
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            return "granted"
+        }
+        val requested = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_WRITE_STORAGE_REQUESTED, false)
+        val act = activity
+        val showRationale = act != null &&
+            ActivityCompat.shouldShowRequestPermissionRationale(
+                act,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE
+            )
+        return if (!requested || showRationale) "denied" else "permanentlyDenied"
+    }
+
+    private fun markWriteStorageRequested() {
+        val ctx = activity ?: applicationContext ?: return
+        ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_WRITE_STORAGE_REQUESTED, true)
+            .apply()
     }
 
     private fun executeGallerySave(request: GalleryRequest, result: Result) {
@@ -281,6 +355,13 @@ class XueHuaFileOperationsPlugin :
     }
 
     private fun onWriteStoragePermissionResult(granted: Boolean) {
+        if (pendingPermissionOnly) {
+            val res = pendingResult
+            pendingPermissionOnly = false
+            pendingResult = null
+            res?.success(if (granted) "granted" else galleryPermissionWireName())
+            return
+        }
         val request = pendingGalleryRequest
         val res = pendingResult
         pendingGalleryRequest = null
@@ -610,6 +691,7 @@ class XueHuaFileOperationsPlugin :
         pendingSaveSourcePath = null
         pendingSaveFileName = "file"
         pendingGalleryRequest = null
+        pendingPermissionOnly = false
     }
 
     private fun registerLaunchers(componentActivity: ComponentActivity) {
@@ -675,5 +757,10 @@ class XueHuaFileOperationsPlugin :
     override fun onDetachedFromActivity() {
         unregisterLaunchers()
         activity = null
+    }
+
+    companion object {
+        private const val PREFS_NAME = "xue_hua_file_operations"
+        private const val KEY_WRITE_STORAGE_REQUESTED = "write_external_storage_requested"
     }
 }

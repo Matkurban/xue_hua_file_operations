@@ -32,4 +32,13 @@ internal class XueHuaFileOperationsPluginTest {
             Mockito.isNull(),
         )
     }
+
+    @Test
+    fun onMethodCall_galleryPermissionStatus_returnsWireName() {
+        val plugin = XueHuaFileOperationsPlugin()
+        val call = MethodCall("galleryPermissionStatus", mapOf("forAlbum" to false))
+        val mockResult: MethodChannel.Result = Mockito.mock(MethodChannel.Result::class.java)
+        plugin.onMethodCall(call, mockResult)
+        Mockito.verify(mockResult).success(Mockito.anyString())
+    }
 }

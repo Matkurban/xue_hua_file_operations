@@ -5,6 +5,7 @@ import 'src/errors/file_operations_exception.dart';
 import 'src/models/directory_result.dart';
 import 'src/models/file_type.dart';
 import 'src/models/gallery_media_type.dart';
+import 'src/models/gallery_permission_status.dart';
 import 'src/models/platform_file.dart';
 import 'src/models/save_file_result.dart';
 import 'src/models/save_to_gallery_result.dart';
@@ -15,6 +16,7 @@ export 'src/errors/file_operations_exception.dart';
 export 'src/models/directory_result.dart';
 export 'src/models/file_type.dart';
 export 'src/models/gallery_media_type.dart';
+export 'src/models/gallery_permission_status.dart';
 export 'src/models/platform_file.dart';
 export 'src/models/save_file_result.dart';
 export 'src/models/save_to_gallery_result.dart';
@@ -141,6 +143,27 @@ class XueHuaFileOperations {
       type: resolvedType,
       albumName: albumName,
     );
+  }
+
+  /// Current gallery permission without showing a system prompt.
+  ///
+  /// Pass [forAlbum] `true` when you will call [saveToGallery] with an
+  /// [albumName]. Web throws [ErrorCode.unsupported].
+  Future<GalleryPermissionStatus> galleryPermissionStatus({
+    bool forAlbum = false,
+  }) {
+    return _platform.galleryPermissionStatus(forAlbum: forAlbum);
+  }
+
+  /// Request gallery permission, showing a system prompt if undetermined.
+  ///
+  /// Returns the new [GalleryPermissionStatus]. Denial is a status, not an
+  /// exception. Pass [forAlbum] `true` when you need read access to create or
+  /// look up a custom album. Web throws [ErrorCode.unsupported].
+  Future<GalleryPermissionStatus> requestGalleryPermission({
+    bool forAlbum = false,
+  }) {
+    return _platform.requestGalleryPermission(forAlbum: forAlbum);
   }
 
   /// Open [path] or [identifier] with the system default application.

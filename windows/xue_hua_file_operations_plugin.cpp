@@ -600,6 +600,9 @@ void XueHuaFileOperationsPlugin::HandleMethodCall(
     SaveFile(registrar_, args, std::move(result));
   } else if (method == "saveToGallery") {
     SaveToGallery(args, std::move(result));
+  } else if (method == "galleryPermissionStatus" ||
+             method == "requestGalleryPermission") {
+    result->Success(flutter::EncodableValue(std::string("granted")));
   } else if (method == "openFile") {
     OpenFile(args, std::move(result));
   } else {

@@ -4,6 +4,7 @@ import 'package:xue_hua_file_operations/src/errors/error_code.dart';
 import 'package:xue_hua_file_operations/src/errors/file_operations_exception.dart';
 import 'package:xue_hua_file_operations/src/models/file_type.dart';
 import 'package:xue_hua_file_operations/src/models/gallery_media_type.dart';
+import 'package:xue_hua_file_operations/src/models/gallery_permission_status.dart';
 import 'package:xue_hua_file_operations/xue_hua_file_operations_method_channel.dart';
 
 void main() {
@@ -189,6 +190,30 @@ void main() {
     expect(saved.name, 'shot.jpg');
     expect(saved.path, isNull);
     expect(saved.identifier, 'content://media/external/images/media/1');
+  });
+
+  test('galleryPermissionStatus encodes forAlbum and decodes', () async {
+    late MethodCall captured;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+          captured = methodCall;
+          return 'limited';
+        });
+
+    final status = await platform.galleryPermissionStatus(forAlbum: true);
+    expect(captured.method, 'galleryPermissionStatus');
+    expect((captured.arguments as Map)['forAlbum'], isTrue);
+    expect(status, GalleryPermissionStatus.limited);
+  });
+
+  test('requestGalleryPermission decodes permanentlyDenied', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+          return 'permanentlyDenied';
+        });
+
+    final status = await platform.requestGalleryPermission();
+    expect(status.isPermanentlyDenied, isTrue);
   });
 
   test('openFile encodes path and identifier', () async {

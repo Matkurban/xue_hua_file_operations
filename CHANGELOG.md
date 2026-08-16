@@ -1,10 +1,11 @@
 ## 1.1.0
 
 * Add `saveToGallery` to save images and videos to the system gallery (Android, iOS, macOS, Windows, Linux).
+* Add `galleryPermissionStatus` / `requestGalleryPermission` returning `GalleryPermissionStatus` (`denied`, `granted`, `restricted`, `limited`, `permanentlyDenied`).
 * Android: API 24–28 writes the public Pictures/Movies folders and scans with `MediaScannerConnection`; API 29+ uses MediaStore `RELATIVE_PATH` / `IS_PENDING` without storage permissions.
-* iOS / macOS: PhotoKit (`PHAccessLevel.addOnly`, or `readWrite` when `albumName` is set).
-* Windows / Linux: write to the user Pictures or Videos folder with unique filenames.
-* Web: `saveToGallery` throws `ErrorCode.unsupported`.
+* iOS / macOS: PhotoKit (`PHAccessLevel.addOnly`, or `readWrite` when `albumName` is set). macOS permission requests always use `readWrite`.
+* Windows / Linux: write to the user Pictures or Videos folder with unique filenames. Gallery permission APIs return `granted`.
+* Web: `saveToGallery` and gallery permission APIs throw `ErrorCode.unsupported`.
 
 ## 1.0.2
 

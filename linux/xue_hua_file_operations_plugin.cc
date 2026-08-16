@@ -479,6 +479,10 @@ static void xue_hua_file_operations_plugin_handle_method_call(
     response = save_file(self, args);
   } else if (strcmp(method, "saveToGallery") == 0) {
     response = save_to_gallery(args);
+  } else if (strcmp(method, "galleryPermissionStatus") == 0 ||
+             strcmp(method, "requestGalleryPermission") == 0) {
+    response = FL_METHOD_RESPONSE(
+        fl_method_success_response_new(fl_value_new_string("granted")));
   } else if (strcmp(method, "openFile") == 0) {
     response = open_file(self, args);
   } else {

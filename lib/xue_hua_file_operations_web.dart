@@ -10,6 +10,7 @@ import 'src/errors/file_operations_exception.dart';
 import 'src/models/directory_result.dart';
 import 'src/models/file_type.dart';
 import 'src/models/gallery_media_type.dart';
+import 'src/models/gallery_permission_status.dart';
 import 'src/models/platform_file.dart';
 import 'src/models/save_file_result.dart';
 import 'src/models/save_to_gallery_result.dart';
@@ -231,6 +232,23 @@ class XueHuaFileOperationsWeb extends XueHuaFileOperationsPlatform {
       message: 'saveToGallery is not supported on Web',
     );
   }
+
+  Never _unsupportedGalleryPermission() {
+    throw FileOperationsException(
+      ErrorCode.unsupported,
+      message: 'Gallery permission is not supported on Web',
+    );
+  }
+
+  @override
+  Future<GalleryPermissionStatus> galleryPermissionStatus({
+    bool forAlbum = false,
+  }) => _unsupportedGalleryPermission();
+
+  @override
+  Future<GalleryPermissionStatus> requestGalleryPermission({
+    bool forAlbum = false,
+  }) => _unsupportedGalleryPermission();
 
   @override
   Future<void> openFile({String? path, String? identifier}) async {

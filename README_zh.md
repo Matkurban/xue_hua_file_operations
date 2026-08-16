@@ -14,6 +14,7 @@
 - 选择目录（`pickDirectory`）
 - 另存为（`saveFile`）：写入字节，或从源路径复制
 - 将图片或视频保存到系统图库（`saveToGallery`）
+- 查询或申请图库权限（`galleryPermissionStatus` / `requestGalleryPermission`）
 - 使用系统默认处理程序打开文件（`openFile`）
 - 统一的 `PlatformFile` 模型，以及类型化异常 `FileOperationsException` / `ErrorCode`
 
@@ -67,7 +68,7 @@ flutter pub get
 
 **权限（`saveToGallery`）：**
 
-- **API 24–28：** 插件已声明 `WRITE_EXTERNAL_STORAGE`（`maxSdkVersion=28`），并在运行时申请。拒绝时抛出 `ErrorCode.permissionDenied`。
+- **API 24–28：** 插件已声明 `WRITE_EXTERNAL_STORAGE`（`maxSdkVersion=28`），并在运行时申请。拒绝时抛出 `ErrorCode.permissionDenied`。也可先调用 `requestGalleryPermission` 并根据 `GalleryPermissionStatus` 处理。
 - **API 29+：** 无需存储权限。通过 MediaStore 插入（`RELATIVE_PATH` + `IS_PENDING`）。
 - **API 33+：** **不要**为该 API 添加 `READ_MEDIA_IMAGES` / `READ_MEDIA_VIDEO`。插入本应用创建的媒体不需要它们。
 
@@ -172,6 +173,11 @@ await ops.saveToGallery(
   bytes: file?.bytes,
   sourcePath: file?.path,
 );
+
+final status = await ops.requestGalleryPermission();
+if (status.isPermanentlyDenied) {
+  // 引导用户去系统设置；系统不会再弹出授权框。
+}
 
 // 打开
 await ops.openFile(path: file?.path, identifier: file?.identifier);
@@ -315,6 +321,34 @@ Future<SaveToGalleryResult> saveToGallery({
 - 在 Web 上抛出 `ErrorCode.unsupported`
 - I/O 失败时抛出 `ErrorCode.notFound` / `ErrorCode.ioError`
 
+### `galleryPermissionStatus` / `requestGalleryPermission`
+
+查询或申请图库写入权限。状态值对齐
+[permission_handler](https://pub.dev/packages/permission_handler) 的 `PermissionStatus`
+（不含仅用于通知的 `provisional`）。拒绝是状态，不是异常。
+
+```dart
+Future<GalleryPermissionStatus> galleryPermissionStatus({bool forAlbum = false});
+Future<GalleryPermissionStatus> requestGalleryPermission({bool forAlbum = false});
+```
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `forAlbum` | `bool` | `false` | 为 `true` 时申请 `saveToGallery(albumName:)` 所需的读相册权限。 |
+
+`galleryPermissionStatus` 不弹窗。`requestGalleryPermission` 仅在尚未决定时弹窗。
+
+无自定义相册时，`status.isGranted || status.isLimited` 即可保存。自定义相册需要 `status.isGranted`。若 `status.isPermanentlyDenied`，请引导用户去系统设置。
+
+| 平台 | 典型行为 |
+|------|----------|
+| iOS | PhotoKit `addOnly`，`forAlbum` 时为 `readWrite` |
+| macOS | 始终 PhotoKit `readWrite`（没有独立的 Add Only 开关） |
+| Android 24–28 | `WRITE_EXTERNAL_STORAGE` |
+| Android 29+ | 始终 `granted`（不申请 `READ_MEDIA_*`） |
+| Windows / Linux | 始终 `granted` |
+| Web | 抛出 `ErrorCode.unsupported` |
+
 ### `openFile`
 
 使用系统默认应用打开文件。
@@ -397,6 +431,18 @@ Future<void> openFile({String? path, String? identifier})
 |----|------|
 | `GalleryMediaType.image` | 图片 |
 | `GalleryMediaType.video` | 视频 |
+
+### `GalleryPermissionStatus`
+
+`galleryPermissionStatus` / `requestGalleryPermission` 的返回值。Getter：`isDenied`、`isGranted`、`isRestricted`、`isLimited`、`isPermanentlyDenied`、`canSave`。
+
+| 值 | 含义 |
+|----|------|
+| `denied` | 尚未申请，或 Android 上拒绝但仍可再弹窗 |
+| `granted` | 已授权写入图库 |
+| `restricted` | 系统限制（家长控制等）。仅 iOS / macOS |
+| `limited` | 有限相册。iOS 14+；仍可保存，不能使用自定义相册 |
+| `permanentlyDenied` | 无法再弹窗，需去系统设置 |
 
 ## 错误处理
 

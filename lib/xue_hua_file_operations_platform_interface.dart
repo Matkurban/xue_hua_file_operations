@@ -5,6 +5,7 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'src/models/directory_result.dart';
 import 'src/models/file_type.dart';
 import 'src/models/gallery_media_type.dart';
+import 'src/models/gallery_permission_status.dart';
 import 'src/models/platform_file.dart';
 import 'src/models/save_file_result.dart';
 import 'src/models/save_to_gallery_result.dart';
@@ -68,6 +69,22 @@ abstract class XueHuaFileOperationsPlatform extends PlatformInterface {
     String? albumName,
   }) {
     throw UnimplementedError('saveToGallery() has not been implemented.');
+  }
+
+  Future<GalleryPermissionStatus> galleryPermissionStatus({
+    bool forAlbum = false,
+  }) {
+    throw UnimplementedError(
+      'galleryPermissionStatus() has not been implemented.',
+    );
+  }
+
+  Future<GalleryPermissionStatus> requestGalleryPermission({
+    bool forAlbum = false,
+  }) {
+    throw UnimplementedError(
+      'requestGalleryPermission() has not been implemented.',
+    );
   }
 
   Future<void> openFile({String? path, String? identifier}) {

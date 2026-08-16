@@ -14,6 +14,7 @@ Cross-platform Flutter plugin for picking files and directories, saving files (s
 - Pick a directory (`pickDirectory`)
 - Save-as dialog (`saveFile`) from bytes or by copying a source path
 - Save an image or video to the system gallery (`saveToGallery`)
+- Query or request gallery permission (`galleryPermissionStatus` / `requestGalleryPermission`)
 - Open a file with the system handler (`openFile`)
 - Unified `PlatformFile` model and typed `FileOperationsException` / `ErrorCode`
 
@@ -67,7 +68,7 @@ flutter pub get
 
 **Permissions for `saveToGallery`:**
 
-- **API 24–28:** the plugin declares `WRITE_EXTERNAL_STORAGE` with `maxSdkVersion=28` and requests it at runtime. Denial throws `ErrorCode.permissionDenied`.
+- **API 24–28:** the plugin declares `WRITE_EXTERNAL_STORAGE` with `maxSdkVersion=28` and requests it at runtime. Denial throws `ErrorCode.permissionDenied`. You can also call `requestGalleryPermission` first and inspect `GalleryPermissionStatus`.
 - **API 29+:** no storage permission. The plugin inserts via MediaStore (`RELATIVE_PATH` + `IS_PENDING`).
 - **API 33+:** do **not** add `READ_MEDIA_IMAGES` / `READ_MEDIA_VIDEO` for this API. Inserting media the app creates does not need them.
 
@@ -172,6 +173,11 @@ await ops.saveToGallery(
   bytes: file?.bytes,
   sourcePath: file?.path,
 );
+
+final status = await ops.requestGalleryPermission();
+if (status.isPermanentlyDenied) {
+  // Direct the user to system Settings; the dialog will not appear again.
+}
 
 // Open
 await ops.openFile(path: file?.path, identifier: file?.identifier);
@@ -315,6 +321,34 @@ Future<SaveToGalleryResult> saveToGallery({
 - `ErrorCode.unsupported` on Web
 - `ErrorCode.notFound` / `ErrorCode.ioError` on I/O failures
 
+### `galleryPermissionStatus` / `requestGalleryPermission`
+
+Check or request gallery write access. Status values match
+[permission_handler](https://pub.dev/packages/permission_handler) `PermissionStatus`
+(without `provisional`). Denial is a status, not an exception.
+
+```dart
+Future<GalleryPermissionStatus> galleryPermissionStatus({bool forAlbum = false});
+Future<GalleryPermissionStatus> requestGalleryPermission({bool forAlbum = false});
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `forAlbum` | `bool` | `false` | `true` requests read/write access needed for `saveToGallery(albumName:)`. |
+
+`galleryPermissionStatus` never shows a prompt. `requestGalleryPermission` shows one only when the status is still undetermined.
+
+Saving without a custom album is allowed when `status.isGranted || status.isLimited`. Custom albums need `status.isGranted`. If `status.isPermanentlyDenied`, send the user to system Settings.
+
+| Platform | Typical result |
+|----------|----------------|
+| iOS | PhotoKit `addOnly` or `readWrite` (`forAlbum`) |
+| macOS | Always PhotoKit `readWrite` (no add-only toggle) |
+| Android 24–28 | `WRITE_EXTERNAL_STORAGE` |
+| Android 29+ | Always `granted` (no `READ_MEDIA_*`) |
+| Windows / Linux | Always `granted` |
+| Web | Throws `ErrorCode.unsupported` |
+
 ### `openFile`
 
 Open a file with the system default application.
@@ -397,6 +431,18 @@ High-level filter for pick dialogs:
 |-------|---------|
 | `GalleryMediaType.image` | Image |
 | `GalleryMediaType.video` | Video |
+
+### `GalleryPermissionStatus`
+
+Result of `galleryPermissionStatus` / `requestGalleryPermission`. Getters: `isDenied`, `isGranted`, `isRestricted`, `isLimited`, `isPermanentlyDenied`, `canSave`.
+
+| Value | Meaning |
+|-------|---------|
+| `denied` | Not requested yet, or denied on Android but the dialog can still be shown |
+| `granted` | Full access to save to the gallery |
+| `restricted` | OS restriction (parental controls). iOS / macOS only |
+| `limited` | Limited Photos Library. iOS 14+; saving still works, custom albums do not |
+| `permanentlyDenied` | Dialog will not appear again; user must change Settings |
 
 ## Errors
 

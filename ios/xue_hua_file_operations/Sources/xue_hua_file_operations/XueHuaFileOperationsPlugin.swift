@@ -42,6 +42,10 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
             saveFile(call: call, result: result)
         case "saveToGallery":
             GallerySaver.save(call: call, result: result)
+        case "galleryPermissionStatus":
+            GallerySaver.permissionStatus(call: call, result: result)
+        case "requestGalleryPermission":
+            GallerySaver.requestPermission(call: call, result: result)
         case "openFile":
             openFile(call: call, result: result)
         default:

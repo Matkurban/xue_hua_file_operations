@@ -6,6 +6,7 @@ import 'src/errors/file_operations_exception.dart';
 import 'src/models/directory_result.dart';
 import 'src/models/file_type.dart';
 import 'src/models/gallery_media_type.dart';
+import 'src/models/gallery_permission_status.dart';
 import 'src/models/platform_file.dart';
 import 'src/models/save_file_result.dart';
 import 'src/models/save_to_gallery_result.dart';
@@ -152,6 +153,30 @@ class MethodChannelXueHuaFileOperations extends XueHuaFileOperationsPlatform {
       );
     }
     return SaveToGalleryResult.fromMap(result);
+  }
+
+  Future<GalleryPermissionStatus> _galleryPermission(
+    String method, {
+    required bool forAlbum,
+  }) async {
+    final raw = await _invoke<String>(method, <String, Object?>{
+      'forAlbum': forAlbum,
+    });
+    return GalleryPermissionStatus.fromWireName(raw);
+  }
+
+  @override
+  Future<GalleryPermissionStatus> galleryPermissionStatus({
+    bool forAlbum = false,
+  }) {
+    return _galleryPermission('galleryPermissionStatus', forAlbum: forAlbum);
+  }
+
+  @override
+  Future<GalleryPermissionStatus> requestGalleryPermission({
+    bool forAlbum = false,
+  }) {
+    return _galleryPermission('requestGalleryPermission', forAlbum: forAlbum);
   }
 
   @override
