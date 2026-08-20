@@ -34,6 +34,7 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
 
   bool _withData = false;
   int? _maxFiles;
+  FileType _pickType = FileType.any;
   String _status = 'Ready';
   List<PlatformFile> _files = const [];
   DirectoryResult? _directory;
@@ -50,7 +51,7 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
   }
 
   Future<void> _pickFile() => _run(() async {
-    final file = await _ops.pickFile(withData: _withData);
+    final file = await _ops.pickFile(withData: _withData, type: _pickType);
     if (!mounted) return;
     if (file == null) {
       setState(() => _status = 'Cancelled');
@@ -67,6 +68,7 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
     final files = await _ops.pickFiles(
       withData: _withData,
       maxFiles: _maxFiles,
+      type: _pickType,
     );
     if (!mounted) return;
     if (files == null) {
@@ -289,6 +291,19 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
             value: _maxFiles != null,
             onChanged: (v) => setState(() => _maxFiles = v ? 3 : null),
           ),
+          const SizedBox(height: 8),
+          SegmentedButton<FileType>(
+            segments: const [
+              ButtonSegment(value: FileType.any, label: Text('any')),
+              ButtonSegment(value: FileType.media, label: Text('media')),
+              ButtonSegment(value: FileType.image, label: Text('image')),
+              ButtonSegment(value: FileType.video, label: Text('video')),
+            ],
+            selected: {_pickType},
+            onSelectionChanged: (selection) =>
+                setState(() => _pickType = selection.first),
+          ),
+          const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,

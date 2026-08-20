@@ -1,5 +1,6 @@
 import Flutter
 import MobileCoreServices
+import PhotosUI
 import UIKit
 import UniformTypeIdentifiers
 
@@ -14,6 +15,7 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
     private var pendingMode: Mode = .pickFile
     private var saveFileName: String = "file"
     private var documentInteractionController: UIDocumentInteractionController?
+    private var documentInteractionScopedAccess = false
 
     private enum Mode {
         case pickFile
@@ -104,6 +106,7 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
         switch args?["type"] as? String {
         case "image": return [.image]
         case "video": return [.movie]
+        case "media": return [.image, .movie]
         case "audio": return [.audio]
         default: return [.item]
         }
@@ -133,6 +136,7 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
         switch args?["type"] as? String {
         case "image": return ["public.image"]
         case "video": return ["public.movie"]
+        case "media": return ["public.image", "public.movie"]
         case "audio": return ["public.audio"]
         default: return ["public.item"]
         }
@@ -210,10 +214,127 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
         pendingMaxFiles = args?["maxFiles"] as? Int
         pendingMode = directory ? .pickDirectory : (multiple ? .pickFiles : .pickFile)
 
+        // Media types must go through the Photos picker: the document picker
+        // browses the Files app, which cannot show the photo library.
+        if !directory, #available(iOS 14.0, *),
+           let mediaType = photoPickerType(from: args)
+        {
+            presentPhotoPicker(
+                type: mediaType,
+                multiple: multiple,
+                maxFiles: pendingMaxFiles,
+                presenter: presenter
+            )
+            return
+        }
+
         let picker = makeOpenPicker(directory: directory, args: args)
         picker.delegate = self
         picker.allowsMultipleSelection = multiple && !directory
         presenter.present(picker, animated: true)
+    }
+
+    /// Returns the media type when the request should use the Photos picker,
+    /// or `nil` when the document picker should be used instead.
+    private func photoPickerType(from args: [String: Any]?) -> String? {
+        if let mimes = args?["allowedMimeTypes"] as? [String], !mimes.isEmpty {
+            return nil
+        }
+        if let exts = args?["allowedExtensions"] as? [String], !exts.isEmpty {
+            return nil
+        }
+        switch args?["type"] as? String {
+        case "image": return "image"
+        case "video": return "video"
+        case "media": return "media"
+        default: return nil
+        }
+    }
+
+    @available(iOS 14.0, *)
+    private func presentPhotoPicker(
+        type: String,
+        multiple: Bool,
+        maxFiles: Int?,
+        presenter: UIViewController
+    ) {
+        var config = PHPickerConfiguration(photoLibrary: .shared())
+        switch type {
+        case "image": config.filter = .images
+        case "video": config.filter = .videos
+        default: config.filter = .any(of: [.images, .videos])
+        }
+        config.selectionLimit = multiple ? (maxFiles ?? 0) : 1
+        config.preferredAssetRepresentationMode = .current
+        let picker = PHPickerViewController(configuration: config)
+        picker.delegate = self
+        presenter.present(picker, animated: true)
+    }
+
+    @available(iOS 14.0, *)
+    private func loadPhotoPickerResults(
+        _ results: [PHPickerResult],
+        withData: Bool,
+        completion: @escaping ([[String: Any?]], Error?) -> Void
+    ) {
+        let group = DispatchGroup()
+        var maps = [[String: Any?]?](repeating: nil, count: results.count)
+        var firstError: Error?
+        let lock = NSLock()
+
+        for (index, item) in results.enumerated() {
+            group.enter()
+            let provider = item.itemProvider
+            let assetIdentifier = item.assetIdentifier
+            let typeIdentifier = provider.hasItemConformingToTypeIdentifier(
+                UTType.movie.identifier
+            ) ? UTType.movie.identifier : UTType.image.identifier
+            provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) {
+                [weak self] url, error in
+                defer { group.leave() }
+                guard let self = self else { return }
+                if let url = url {
+                    do {
+                        // The provider URL is only valid inside this callback;
+                        // copy into the plugin cache before returning.
+                        let map = try self.copiedFileMap(
+                            from: url,
+                            name: url.lastPathComponent,
+                            withData: withData,
+                            identifier: assetIdentifier
+                        )
+                        lock.lock()
+                        maps[index] = map
+                        lock.unlock()
+                        return
+                    } catch {
+                        lock.lock()
+                        if firstError == nil { firstError = error }
+                        lock.unlock()
+                        return
+                    }
+                }
+                lock.lock()
+                if firstError == nil {
+                    firstError = error ?? NSError(
+                        domain: "xue_hua_file_operations",
+                        code: -1,
+                        userInfo: [
+                            NSLocalizedDescriptionKey: "Unable to load picked media",
+                        ]
+                    )
+                }
+                lock.unlock()
+            }
+        }
+
+        group.notify(queue: .main) {
+            if let error = firstError {
+                completion([], error)
+            } else {
+                completion(maps.compactMap { $0 }, nil)
+            }
+        }
     }
 
     private func saveFile(call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -293,48 +414,48 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
             return
         }
 
-        let access = resolved.url.isFileURL
-            ? resolved.url.startAccessingSecurityScopedResource()
-            : false
+        // UIApplication.open always fails for file URLs; go straight to the
+        // document interaction controller for local files.
+        if resolved.url.isFileURL {
+            presentDocumentInteraction(for: resolved.url, result: result)
+            return
+        }
 
-        UIApplication.shared.open(resolved.url, options: [:]) { [weak self] success in
+        UIApplication.shared.open(resolved.url, options: [:]) { success in
             if success {
-                if access {
-                    resolved.url.stopAccessingSecurityScopedResource()
-                }
                 result(true)
-                return
-            }
-            // Fallback: UIDocumentInteractionController preview/open-in menu.
-            guard let self = self, let presenter = self.rootViewController() else {
-                if access {
-                    resolved.url.stopAccessingSecurityScopedResource()
-                }
-                result(FlutterError(code: "io_error", message: "Unable to open file", details: nil))
-                return
-            }
-            let controller = UIDocumentInteractionController(url: resolved.url)
-            controller.delegate = self
-            self.documentInteractionController = controller
-            let presented = controller.presentPreview(animated: true)
-                || controller.presentOpenInMenu(
-                    from: presenter.view.bounds,
-                    in: presenter.view,
-                    animated: true
-                )
-            if !presented {
-                if access {
-                    resolved.url.stopAccessingSecurityScopedResource()
-                }
-                self.documentInteractionController = nil
-                result(FlutterError(code: "io_error", message: "Unable to open file", details: nil))
             } else {
-                // Keep security-scoped access until interaction ends; stop in delegate.
-                if !access {
-                    // Nothing to retain for non-scoped URLs.
-                }
-                result(true)
+                result(FlutterError(code: "io_error", message: "Unable to open file", details: nil))
             }
+        }
+    }
+
+    private func presentDocumentInteraction(for url: URL, result: @escaping FlutterResult) {
+        guard let presenter = rootViewController() else {
+            result(FlutterError(code: "unknown", message: "No view controller", details: nil))
+            return
+        }
+        let access = url.startAccessingSecurityScopedResource()
+        let controller = UIDocumentInteractionController(url: url)
+        controller.delegate = self
+        documentInteractionController = controller
+        documentInteractionScopedAccess = access
+        let presented = controller.presentPreview(animated: true)
+            || controller.presentOpenInMenu(
+                from: presenter.view.bounds,
+                in: presenter.view,
+                animated: true
+            )
+        if !presented {
+            if access {
+                url.stopAccessingSecurityScopedResource()
+            }
+            documentInteractionController = nil
+            result(FlutterError(code: "io_error", message: "Unable to open file", details: nil))
+        } else {
+            // Security-scoped access (if any) is released in the delegate
+            // callbacks when the interaction ends.
+            result(true)
         }
     }
 
@@ -370,7 +491,10 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
     public func documentInteractionControllerDidEndPreview(
         _ controller: UIDocumentInteractionController
     ) {
-        controller.url?.stopAccessingSecurityScopedResource()
+        if documentInteractionScopedAccess {
+            controller.url?.stopAccessingSecurityScopedResource()
+            documentInteractionScopedAccess = false
+        }
         documentInteractionController = nil
     }
 
@@ -384,7 +508,10 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
     public func documentInteractionControllerDidDismissOpenInMenu(
         _ controller: UIDocumentInteractionController
     ) {
-        controller.url?.stopAccessingSecurityScopedResource()
+        if documentInteractionScopedAccess {
+            controller.url?.stopAccessingSecurityScopedResource()
+            documentInteractionScopedAccess = false
+        }
         documentInteractionController = nil
     }
 
@@ -463,10 +590,20 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
                 result(nil)
                 return
             }
-            do {
-                try result(["file": fileMap(from: url, withData: withData)])
-            } catch {
-                result(FlutterError(code: "io_error", message: error.localizedDescription, details: nil))
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let self = self else { return }
+                do {
+                    let map = try self.fileMap(from: url, withData: withData)
+                    DispatchQueue.main.async { result(["file": map]) }
+                } catch {
+                    DispatchQueue.main.async {
+                        result(FlutterError(
+                            code: "io_error",
+                            message: error.localizedDescription,
+                            details: nil
+                        ))
+                    }
+                }
             }
         case .pickFiles:
             if let max = maxFiles, urls.count > max {
@@ -477,11 +614,20 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
                 ))
                 return
             }
-            do {
-                let files = try urls.map { try fileMap(from: $0, withData: withData) }
-                result(["files": files])
-            } catch {
-                result(FlutterError(code: "io_error", message: error.localizedDescription, details: nil))
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let self = self else { return }
+                do {
+                    let files = try urls.map { try self.fileMap(from: $0, withData: withData) }
+                    DispatchQueue.main.async { result(["files": files]) }
+                } catch {
+                    DispatchQueue.main.async {
+                        result(FlutterError(
+                            code: "io_error",
+                            message: error.localizedDescription,
+                            details: nil
+                        ))
+                    }
+                }
             }
         case .pickDirectory:
             guard let url = urls.first else {
@@ -519,25 +665,34 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
             }
         }
 
-        let values = try url.resourceValues(forKeys: [.fileSizeKey, .nameKey])
+        let values = try url.resourceValues(forKeys: [.nameKey])
         let name = values.name ?? url.lastPathComponent
-        var size = values.fileSize ?? 0
-        var bytes: FlutterStandardTypedData?
+        return try copiedFileMap(
+            from: url,
+            name: name,
+            withData: withData,
+            identifier: url.absoluteString
+        )
+    }
 
+    /// Copies `url` into the plugin cache directory and builds the wire map.
+    private func copiedFileMap(
+        from url: URL,
+        name: String,
+        withData: Bool,
+        identifier: String?
+    ) throws -> [String: Any?] {
         let cacheURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("xue_hua_file_operations", isDirectory: true)
         try FileManager.default.createDirectory(at: cacheURL, withIntermediateDirectories: true)
-        let dest = cacheURL.appendingPathComponent(
-            "\(Int(Date().timeIntervalSince1970 * 1000))_\(name)"
-        )
+        let dest = cacheURL.appendingPathComponent("\(UUID().uuidString)_\(name)")
         if FileManager.default.fileExists(atPath: dest.path) {
             try FileManager.default.removeItem(at: dest)
         }
         try FileManager.default.copyItem(at: url, to: dest)
-        if size == 0 {
-            size = try (dest.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? 0
-        }
 
+        var size = (try? dest.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+        var bytes: FlutterStandardTypedData?
         if withData {
             let data = try Data(contentsOf: dest)
             bytes = FlutterStandardTypedData(bytes: data)
@@ -549,7 +704,7 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
             "size": size,
             "path": dest.path,
             "bytes": bytes,
-            "identifier": url.absoluteString,
+            "identifier": identifier,
         ]
     }
 
@@ -559,5 +714,43 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
         pendingMaxFiles = nil
         pendingMode = .pickFile
         saveFileName = "file"
+    }
+}
+
+@available(iOS 14.0, *)
+extension XueHuaFileOperationsPlugin: PHPickerViewControllerDelegate {
+    public func picker(
+        _ picker: PHPickerViewController,
+        didFinishPicking results: [PHPickerResult]
+    ) {
+        picker.dismiss(animated: true)
+        let result = pendingResult
+        let mode = pendingMode
+        let withData = pendingWithData
+        clearPending()
+        guard let result = result else { return }
+        if results.isEmpty {
+            result(nil)
+            return
+        }
+        loadPhotoPickerResults(results, withData: withData) { maps, error in
+            if let error = error {
+                result(FlutterError(
+                    code: "io_error",
+                    message: error.localizedDescription,
+                    details: nil
+                ))
+                return
+            }
+            if mode == .pickFile {
+                if let first = maps.first {
+                    result(["file": first])
+                } else {
+                    result(nil)
+                }
+            } else {
+                result(["files": maps])
+            }
+        }
     }
 }

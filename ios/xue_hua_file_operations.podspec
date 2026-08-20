@@ -4,14 +4,15 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'xue_hua_file_operations'
-  s.version          = '0.0.1'
-  s.summary          = 'A new Flutter project.'
+  s.version          = '1.3.0'
+  s.summary          = 'Cross-platform Flutter plugin for file operations.'
   s.description      = <<-DESC
-A new Flutter project.
+Cross-platform Flutter plugin for picking files/directories, save-as, saving
+to the gallery, and opening files with the system default app.
                        DESC
-  s.homepage         = 'http://example.com'
+  s.homepage         = 'https://github.com/Matkurban/xue_hua_file_operations'
   s.license          = { :file => '../LICENSE' }
-  s.author           = { 'Your Company' => 'email@example.com' }
+  s.author           = { 'Matkurban' => 'https://github.com/Matkurban' }
   s.source           = { :path => '.' }
   s.source_files = 'xue_hua_file_operations/Sources/xue_hua_file_operations/**/*'
   s.dependency 'Flutter'

@@ -89,6 +89,7 @@ static std::vector<std::string> get_string_list_arg(FlValue* args,
   return out;
 }
 
+// Returns nullptr when with_data is set and the file cannot be read.
 static FlValue* file_map_from_path(const char* path, bool with_data) {
   g_autofree gchar* basename = g_path_get_basename(path);
   goffset size = 0;
@@ -107,8 +108,14 @@ static FlValue* file_map_from_path(const char* path, bool with_data) {
 
   if (with_data) {
     std::ifstream input(path, std::ios::binary);
+    if (!input) {
+      return nullptr;
+    }
     std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(input)),
                                std::istreambuf_iterator<char>());
+    if (input.bad()) {
+      return nullptr;
+    }
     fl_value_set_string_take(
         map, "size",
         fl_value_new_int(static_cast<int64_t>(bytes.size())));
@@ -126,8 +133,11 @@ static void add_filters(GtkFileChooser* chooser, FlValue* args) {
   auto mimes = get_string_list_arg(args, "allowedMimeTypes");
   std::string type = get_string_arg(args, "type");
 
-  if (!extensions.empty() || !mimes.empty() ||
-      type == "image" || type == "video" || type == "audio") {
+  bool has_specific_filter =
+      !extensions.empty() || !mimes.empty() || type == "image" ||
+      type == "video" || type == "media" || type == "audio";
+
+  if (has_specific_filter) {
     GtkFileFilter* filter = gtk_file_filter_new();
     gtk_file_filter_set_name(filter, "Allowed files");
     for (const auto& ext : extensions) {
@@ -142,12 +152,19 @@ static void add_filters(GtkFileChooser* chooser, FlValue* args) {
     for (const auto& mime : mimes) {
       gtk_file_filter_add_mime_type(filter, mime.c_str());
     }
-    if (type == "image") gtk_file_filter_add_mime_type(filter, "image/*");
-    if (type == "video") gtk_file_filter_add_mime_type(filter, "video/*");
+    if (type == "image" || type == "media") {
+      gtk_file_filter_add_mime_type(filter, "image/*");
+    }
+    if (type == "video" || type == "media") {
+      gtk_file_filter_add_mime_type(filter, "video/*");
+    }
     if (type == "audio") gtk_file_filter_add_mime_type(filter, "audio/*");
     gtk_file_chooser_add_filter(chooser, filter);
+    return;
   }
 
+  // Only offer "All files" when no specific filter was requested, so the
+  // requested type cannot be bypassed from the dialog.
   GtkFileFilter* all = gtk_file_filter_new();
   gtk_file_filter_set_name(all, "All files");
   gtk_file_filter_add_pattern(all, "*");
@@ -180,9 +197,13 @@ static FlMethodResponse* pick_files(XueHuaFileOperationsPlugin* self,
     if (filename == nullptr) {
       return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
     }
+    FlValue* file_map = file_map_from_path(filename, with_data);
+    if (file_map == nullptr) {
+      return FL_METHOD_RESPONSE(fl_method_error_response_new(
+          "io_error", "Unable to read selected file", nullptr));
+    }
     g_autoptr(FlValue) wrapper = fl_value_new_map();
-    fl_value_set_string_take(wrapper, "file",
-                             file_map_from_path(filename, with_data));
+    fl_value_set_string_take(wrapper, "file", file_map);
     return FL_METHOD_RESPONSE(fl_method_success_response_new(wrapper));
   }
 
@@ -206,7 +227,13 @@ static FlMethodResponse* pick_files(XueHuaFileOperationsPlugin* self,
   g_autoptr(FlValue) files = fl_value_new_list();
   for (GSList* item = filenames; item != nullptr; item = item->next) {
     const char* path = static_cast<const char*>(item->data);
-    fl_value_append_take(files, file_map_from_path(path, with_data));
+    FlValue* file_map = file_map_from_path(path, with_data);
+    if (file_map == nullptr) {
+      g_slist_free_full(filenames, g_free);
+      return FL_METHOD_RESPONSE(fl_method_error_response_new(
+          "io_error", "Unable to read selected file", nullptr));
+    }
+    fl_value_append_take(files, file_map);
   }
   g_slist_free_full(filenames, g_free);
 
@@ -289,12 +316,34 @@ static FlMethodResponse* save_file(XueHuaFileOperationsPlugin* self,
       size_t length = fl_value_get_length(bytes_value);
       const uint8_t* data = fl_value_get_uint8_list(bytes_value);
       std::ofstream out(filename, std::ios::binary);
+      if (!out) {
+        return FL_METHOD_RESPONSE(fl_method_error_response_new(
+            "io_error", "Unable to open destination file", nullptr));
+      }
       out.write(reinterpret_cast<const char*>(data),
                 static_cast<std::streamsize>(length));
+      out.close();
+      if (out.fail()) {
+        return FL_METHOD_RESPONSE(fl_method_error_response_new(
+            "io_error", "Failed to write file", nullptr));
+      }
     } else {
+      if (!g_file_test(source_path.c_str(), G_FILE_TEST_EXISTS)) {
+        return FL_METHOD_RESPONSE(fl_method_error_response_new(
+            "not_found", ("File not found: " + source_path).c_str(), nullptr));
+      }
       std::ifstream input(source_path, std::ios::binary);
       std::ofstream out(filename, std::ios::binary);
+      if (!input || !out) {
+        return FL_METHOD_RESPONSE(fl_method_error_response_new(
+            "io_error", "Failed to open source or destination file", nullptr));
+      }
       out << input.rdbuf();
+      out.close();
+      if (input.bad() || out.fail()) {
+        return FL_METHOD_RESPONSE(fl_method_error_response_new(
+            "io_error", "Failed to write file", nullptr));
+      }
     }
   } catch (...) {
     return FL_METHOD_RESPONSE(

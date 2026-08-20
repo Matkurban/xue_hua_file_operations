@@ -15,6 +15,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace xue_hua_file_operations {
@@ -114,24 +115,140 @@ const std::vector<uint8_t> *GetBytesArg(const EncodableMap *args,
   return &std::get<std::vector<uint8_t>>(it->second);
 }
 
-void ApplyExtensionFilters(IFileDialog *dialog,
-                           const std::vector<std::string> &extensions) {
-  if (extensions.empty()) return;
+const std::vector<std::string> &ImageExtensions() {
+  static const std::vector<std::string> kExts = {
+      "jpg", "jpeg", "png",  "gif",  "bmp", "webp",
+      "tif", "tiff", "heic", "heif", "avif", "ico"};
+  return kExts;
+}
 
-  std::wstring filter_spec;
-  for (size_t i = 0; i < extensions.size(); ++i) {
-    std::string ext = extensions[i];
-    if (!ext.empty() && ext[0] == '.') ext = ext.substr(1);
-    if (i > 0) filter_spec += L";";
-    filter_spec += L"*.";
-    filter_spec += Utf8ToWide(ext);
+const std::vector<std::string> &VideoExtensions() {
+  static const std::vector<std::string> kExts = {
+      "mp4", "mov", "m4v", "avi", "mkv", "webm",
+      "wmv", "mpg", "mpeg", "3gp", "3g2"};
+  return kExts;
+}
+
+const std::vector<std::string> &AudioExtensions() {
+  static const std::vector<std::string> kExts = {
+      "mp3", "wav", "aac", "m4a", "flac", "ogg", "wma", "opus"};
+  return kExts;
+}
+
+void AppendExtensions(std::vector<std::string> &target,
+                      const std::vector<std::string> &source) {
+  target.insert(target.end(), source.begin(), source.end());
+}
+
+// Best-effort mapping of a MIME type to filter extensions.
+std::vector<std::string> ExtensionsForMime(const std::string &mime) {
+  if (mime == "image/*") return ImageExtensions();
+  if (mime == "video/*") return VideoExtensions();
+  if (mime == "audio/*") return AudioExtensions();
+
+  static const std::pair<const char *, const char *> kMimeToExt[] = {
+      {"image/jpeg", "jpg;jpeg"},   {"image/png", "png"},
+      {"image/gif", "gif"},         {"image/webp", "webp"},
+      {"image/bmp", "bmp"},         {"image/tiff", "tif;tiff"},
+      {"image/heic", "heic"},       {"image/heif", "heif"},
+      {"image/avif", "avif"},       {"image/x-icon", "ico"},
+      {"image/svg+xml", "svg"},     {"video/mp4", "mp4;m4v"},
+      {"video/quicktime", "mov"},   {"video/webm", "webm"},
+      {"video/x-msvideo", "avi"},   {"video/x-matroska", "mkv"},
+      {"video/mpeg", "mpg;mpeg"},   {"video/3gpp", "3gp"},
+      {"video/3gpp2", "3g2"},       {"audio/mpeg", "mp3"},
+      {"audio/wav", "wav"},         {"audio/x-wav", "wav"},
+      {"audio/aac", "aac"},         {"audio/mp4", "m4a"},
+      {"audio/flac", "flac"},       {"audio/ogg", "ogg;opus"},
+      {"application/pdf", "pdf"},   {"application/zip", "zip"},
+      {"application/json", "json"}, {"text/plain", "txt"},
+      {"text/csv", "csv"},          {"text/html", "htm;html"},
+      {"text/xml", "xml"},          {"application/xml", "xml"},
+  };
+  std::vector<std::string> out;
+  for (const auto &[key, exts] : kMimeToExt) {
+    if (mime == key) {
+      std::string list(exts);
+      size_t start = 0;
+      while (start <= list.size()) {
+        size_t sep = list.find(';', start);
+        if (sep == std::string::npos) {
+          out.push_back(list.substr(start));
+          break;
+        }
+        out.push_back(list.substr(start, sep - start));
+        start = sep + 1;
+      }
+      break;
+    }
   }
+  return out;
+}
 
-  COMDLG_FILTERSPEC spec{};
-  spec.pszName = L"Allowed files";
-  spec.pszSpec = filter_spec.c_str();
-  dialog->SetFileTypes(1, &spec);
+// Collects filter extensions from allowedExtensions, allowedMimeTypes and
+// the high-level type, mirroring the other platforms.
+std::vector<std::string> FilterExtensionsFromArgs(const EncodableMap *args) {
+  std::vector<std::string> extensions;
+  for (auto ext : GetStringListArg(args, "allowedExtensions")) {
+    if (!ext.empty() && ext[0] == '.') ext = ext.substr(1);
+    if (!ext.empty()) extensions.push_back(ext);
+  }
+  for (const auto &mime : GetStringListArg(args, "allowedMimeTypes")) {
+    AppendExtensions(extensions, ExtensionsForMime(mime));
+  }
+  if (!extensions.empty()) return extensions;
+
+  std::string type = GetStringArg(args, "type");
+  if (type == "image") return ImageExtensions();
+  if (type == "video") return VideoExtensions();
+  if (type == "audio") return AudioExtensions();
+  if (type == "media") {
+    AppendExtensions(extensions, ImageExtensions());
+    AppendExtensions(extensions, VideoExtensions());
+  }
+  return extensions;
+}
+
+// Backing storage for dialog filters. Per IFileDialog::SetFileTypes the
+// strings must stay alive until the dialog is shown, so the caller keeps
+// this object in scope until after Show() returns.
+struct DialogFilter {
+  std::wstring name;
+  std::wstring spec;
+  COMDLG_FILTERSPEC filter_spec{};
+  bool valid = false;
+};
+
+DialogFilter BuildFilter(const std::vector<std::string> &extensions) {
+  DialogFilter filter;
+  if (extensions.empty()) return filter;
+
+  std::wstring spec;
+  for (size_t i = 0; i < extensions.size(); ++i) {
+    if (i > 0) spec += L";";
+    spec += L"*.";
+    spec += Utf8ToWide(extensions[i]);
+  }
+  filter.name = L"Allowed files";
+  filter.spec = spec;
+  filter.filter_spec.pszName = filter.name.c_str();
+  filter.filter_spec.pszSpec = filter.spec.c_str();
+  filter.valid = true;
+  return filter;
+}
+
+void ApplyFilter(IFileDialog *dialog, const DialogFilter &filter) {
+  if (!filter.valid) return;
+  dialog->SetFileTypes(1, &filter.filter_spec);
   dialog->SetFileTypeIndex(1);
+}
+
+std::string FileUriFromWidePath(const std::wstring &path) {
+  std::string utf8 = WideToUtf8(path);
+  for (auto &ch : utf8) {
+    if (ch == '\\') ch = '/';
+  }
+  return "file:///" + utf8;
 }
 
 EncodableMap FileMapFromPath(const std::wstring &path, bool with_data) {
@@ -147,17 +264,16 @@ EncodableMap FileMapFromPath(const std::wstring &path, bool with_data) {
 
   EncodableMap map;
   map[EncodableValue("name")] = EncodableValue(name);
-  map[EncodableValue("size")] = EncodableValue(static_cast<int32_t>(size));
+  map[EncodableValue("size")] = EncodableValue(size);
   map[EncodableValue("path")] = EncodableValue(utf8_path);
-  map[EncodableValue("identifier")] =
-      EncodableValue(std::string("file:///") + utf8_path);
+  map[EncodableValue("identifier")] = EncodableValue(FileUriFromWidePath(path));
 
   if (with_data) {
     std::ifstream input(p, std::ios::binary);
     std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(input)),
                                std::istreambuf_iterator<char>());
     map[EncodableValue("size")] =
-        EncodableValue(static_cast<int32_t>(bytes.size()));
+        EncodableValue(static_cast<int64_t>(bytes.size()));
     map[EncodableValue("bytes")] = EncodableValue(bytes);
   } else {
     map[EncodableValue("bytes")] = EncodableValue();
@@ -178,7 +294,6 @@ void PickFiles(
     std::unique_ptr<flutter::MethodResult<EncodableValue>> result) {
   bool with_data = GetBoolArg(args, "withData", false);
   auto max_files = GetIntArg(args, "maxFiles");
-  auto extensions = GetStringListArg(args, "allowedExtensions");
   std::string title = GetStringArg(args, "dialogTitle");
 
   IFileOpenDialog *dialog = nullptr;
@@ -198,7 +313,9 @@ void PickFiles(
   if (!title.empty()) {
     dialog->SetTitle(Utf8ToWide(title).c_str());
   }
-  ApplyExtensionFilters(dialog, extensions);
+  // Filter storage must outlive Show().
+  DialogFilter filter = BuildFilter(FilterExtensionsFromArgs(args));
+  ApplyFilter(dialog, filter);
 
   hr = dialog->Show(GetRootWindow(registrar));
   if (hr == HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
@@ -333,8 +450,7 @@ void PickDirectory(
   EncodableMap map;
   map[EncodableValue("path")] = EncodableValue(WideToUtf8(path));
   map[EncodableValue("name")] = EncodableValue(WideToUtf8(p.filename().wstring()));
-  map[EncodableValue("identifier")] =
-      EncodableValue(std::string("file:///") + WideToUtf8(path));
+  map[EncodableValue("identifier")] = EncodableValue(FileUriFromWidePath(path));
   CoTaskMemFree(path);
   result->Success(EncodableValue(map));
 }
@@ -346,7 +462,6 @@ void SaveFile(flutter::PluginRegistrarWindows *registrar,
   if (file_name.empty()) file_name = "file";
   std::string source_path = GetStringArg(args, "sourcePath");
   const auto *bytes = GetBytesArg(args, "bytes");
-  auto extensions = GetStringListArg(args, "allowedExtensions");
   std::string title = GetStringArg(args, "dialogTitle");
 
   if (!bytes && source_path.empty()) {
@@ -367,7 +482,9 @@ void SaveFile(flutter::PluginRegistrarWindows *registrar,
   if (!title.empty()) {
     dialog->SetTitle(Utf8ToWide(title).c_str());
   }
-  ApplyExtensionFilters(dialog, extensions);
+  // Filter storage must outlive Show().
+  DialogFilter filter = BuildFilter(FilterExtensionsFromArgs(args));
+  ApplyFilter(dialog, filter);
 
   hr = dialog->Show(GetRootWindow(registrar));
   if (hr == HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
@@ -401,12 +518,28 @@ void SaveFile(flutter::PluginRegistrarWindows *registrar,
     std::filesystem::path dest(path);
     if (bytes) {
       std::ofstream out(dest, std::ios::binary);
+      if (!out) {
+        CoTaskMemFree(path);
+        result->Error("io_error", "Unable to open destination file");
+        return;
+      }
       out.write(reinterpret_cast<const char *>(bytes->data()),
                 static_cast<std::streamsize>(bytes->size()));
+      out.close();
+      if (out.fail()) {
+        CoTaskMemFree(path);
+        result->Error("io_error", "Failed to write destination file");
+        return;
+      }
     } else {
+      std::filesystem::path source(Utf8ToWide(source_path));
+      if (!std::filesystem::exists(source)) {
+        CoTaskMemFree(path);
+        result->Error("not_found", "File not found: " + source_path);
+        return;
+      }
       std::filesystem::copy_file(
-          std::filesystem::path(Utf8ToWide(source_path)), dest,
-          std::filesystem::copy_options::overwrite_existing);
+          source, dest, std::filesystem::copy_options::overwrite_existing);
     }
     EncodableMap map;
     map[EncodableValue("path")] = EncodableValue(WideToUtf8(path));
@@ -568,7 +701,7 @@ void SaveToGallery(
       EncodableValue(WideToUtf8(dest.filename().wstring()));
   map[EncodableValue("path")] = EncodableValue(WideToUtf8(dest_wide));
   map[EncodableValue("identifier")] =
-      EncodableValue(std::string("file:///") + WideToUtf8(dest_wide));
+      EncodableValue(FileUriFromWidePath(dest_wide));
   result->Success(EncodableValue(map));
 }
 

@@ -39,7 +39,7 @@ flutter pub get
 | 平台 | 是否支持 | 说明 |
 |------|----------|------|
 | Android | 是 | Storage Access Framework (SAF) / Activity Result API；`saveToGallery` 使用 MediaStore / 公共 Pictures |
-| iOS | 是（13.0+） | `UIDocumentPicker` / 文档交互；`saveToGallery` 使用 PhotoKit |
+| iOS | 是（13.0+） | 媒体走 `PHPickerViewController`（iOS 14+），其余走 `UIDocumentPicker`；`saveToGallery` 使用 PhotoKit |
 | macOS | 是 | 原生 `NSOpenPanel` / `NSSavePanel`；`saveToGallery` 使用 PhotoKit |
 | Windows | 是 | 原生文件 / 文件夹对话框；`saveToGallery` 写入 Pictures / Videos |
 | Linux | 是 | 原生文件 / 文件夹对话框；`saveToGallery` 写入 XDG Pictures / Videos |
@@ -237,7 +237,7 @@ Future<PlatformFile?> pickFile({
 |------|------|--------|------|
 | `withData` | `bool` | `false` | 为 `true` 时将文件内容读入 `PlatformFile.bytes`。在 Web 上无论该标志如何都会加载 bytes。 |
 | `dialogTitle` | `String?` | `null` | 原生对话框标题（在支持的平台上，如桌面）。部分平台可能忽略（如 Android SAF、Web）。 |
-| `type` | `FileType` | `FileType.any` | 高级类型过滤：`any`、`image`、`video`、`audio` 或 `custom`。 |
+| `type` | `FileType` | `FileType.any` | 高级类型过滤：`any`、`media`、`image`、`video`、`audio` 或 `custom`。在 iOS / Android 上，`image` / `video` / `media`（且未传扩展名 / MIME 过滤）会打开系统照片选择器（iOS `PHPickerViewController`，Android Photo Picker），可直接从相册选择。 |
 | `allowedExtensions` | `List<String>?` | `null` | 允许的扩展名（可带或不带前导 `.`），例如 `['pdf', 'txt']`。常与 `FileType.custom` 配合，或作为附加过滤。 |
 | `allowedMimeTypes` | `List<String>?` | `null` | 允许的 MIME 类型，例如 `['application/pdf']`。具体行为取决于平台选择器。 |
 
@@ -471,10 +471,13 @@ Future<void> openFile({String? path, String? identifier})
 | 值 | 含义 |
 |----|------|
 | `FileType.any` | 不限制类型 |
-| `FileType.image` | 图片 |
-| `FileType.video` | 视频 |
+| `FileType.media` | 图片 + 视频（iOS / Android 打开系统照片选择器） |
+| `FileType.image` | 图片（iOS / Android 打开系统照片选择器） |
+| `FileType.video` | 视频（iOS / Android 打开系统照片选择器） |
 | `FileType.audio` | 音频 |
 | `FileType.custom` | 依赖 `allowedExtensions` / `allowedMimeTypes` |
+
+在 iOS / Android 上，`image` / `video` / `media` 且未传 `allowedExtensions` / `allowedMimeTypes` 时使用系统照片选择器（无需相册权限）；传入自定义过滤时仍使用文档选择器。iOS 13 回退到文档选择器。
 
 ### `GalleryMediaType`
 

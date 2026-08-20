@@ -39,6 +39,8 @@ class XueHuaFileOperationsWeb extends XueHuaFileOperationsPlatform {
     if (parts.isNotEmpty) return parts.join(',');
 
     switch (type) {
+      case FileType.media:
+        return 'image/*,video/*';
       case FileType.image:
         return 'image/*';
       case FileType.video:

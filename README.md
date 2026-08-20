@@ -39,7 +39,7 @@ flutter pub get
 | Platform | Supported | Notes |
 |----------|-----------|--------|
 | Android | Yes | Storage Access Framework (SAF) / Activity Result APIs; `saveToGallery` uses MediaStore / public Pictures |
-| iOS | Yes (13.0+) | `UIDocumentPicker` / document interaction; `saveToGallery` uses PhotoKit |
+| iOS | Yes (13.0+) | Media uses `PHPickerViewController` (iOS 14+), other types use `UIDocumentPicker`; `saveToGallery` uses PhotoKit |
 | macOS | Yes | Native `NSOpenPanel` / `NSSavePanel`; `saveToGallery` uses PhotoKit |
 | Windows | Yes | Native file / folder dialogs; `saveToGallery` writes Pictures / Videos |
 | Linux | Yes | Native file / folder dialogs; `saveToGallery` writes XDG Pictures / Videos |
@@ -237,7 +237,7 @@ Future<PlatformFile?> pickFile({
 |-----------|------|---------|-------------|
 | `withData` | `bool` | `false` | When `true`, load file contents into `PlatformFile.bytes`. On Web, bytes are always loaded regardless of this flag. |
 | `dialogTitle` | `String?` | `null` | Optional title for the native dialog where supported (desktop). May be ignored on some platforms (e.g. Android SAF, Web). |
-| `type` | `FileType` | `FileType.any` | High-level filter: `any`, `image`, `video`, `audio`, or `custom`. |
+| `type` | `FileType` | `FileType.any` | High-level filter: `any`, `media`, `image`, `video`, `audio`, or `custom`. On iOS / Android, `image` / `video` / `media` (without extension / MIME filters) opens the system photo picker (iOS `PHPickerViewController`, Android Photo Picker) so items can be selected from the photo library. |
 | `allowedExtensions` | `List<String>?` | `null` | Allowed extensions (with or without leading `.`), e.g. `['pdf', 'txt']`. Used especially with `FileType.custom` or as an additional filter. |
 | `allowedMimeTypes` | `List<String>?` | `null` | Allowed MIME types, e.g. `['application/pdf']`. Behavior depends on the platform picker. |
 
@@ -471,10 +471,13 @@ High-level filter for pick dialogs:
 | Value | Meaning |
 |-------|---------|
 | `FileType.any` | No type restriction |
-| `FileType.image` | Images |
-| `FileType.video` | Videos |
+| `FileType.media` | Images + videos (system photo picker on iOS / Android) |
+| `FileType.image` | Images (system photo picker on iOS / Android) |
+| `FileType.video` | Videos (system photo picker on iOS / Android) |
 | `FileType.audio` | Audio |
 | `FileType.custom` | Rely on `allowedExtensions` / `allowedMimeTypes` |
+
+On iOS / Android, `image` / `video` / `media` without `allowedExtensions` / `allowedMimeTypes` uses the system photo picker (no photo permission required); passing custom filters keeps the document picker. iOS 13 falls back to the document picker.
 
 ### `GalleryMediaType`
 

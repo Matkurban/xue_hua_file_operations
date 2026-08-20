@@ -1,3 +1,15 @@
+## 1.3.0
+
+* **iOS: fix picking photos/videos.** `FileType.image` / `video` (without custom extension / MIME filters) now opens `PHPickerViewController` (iOS 14+) instead of the Files document picker, which cannot browse the photo library. iOS 13 falls back to the document picker.
+* **Android: use the system Photo Picker** (`PickVisualMedia` / `PickMultipleVisualMedia`) for `FileType.image` / `video` instead of the SAF document UI.
+* Add `FileType.media` (images + videos) mapped to the photo picker on iOS / Android, `image/*,video/*` on Web, and combined image/video filters on desktop.
+* Android: fail in-flight operations with `cancelled` when the Activity detaches so Dart Futures no longer hang; report `size` as 64-bit; merge `allowedMimeTypes` with extension-derived MIME types (matching iOS); move pick/save file I/O off the main thread.
+* iOS: move picked-file copying and `withData` reads off the main thread; `openFile` opens local files directly via the document interaction controller (skipping a doomed `UIApplication.open` round trip); balance security-scoped access in delegate callbacks.
+* macOS: security-scoped access around picked-file reads and `saveFile` source copies (sandbox); `saveFile` reports `not_found` for missing sources; file reads run off the main thread.
+* Windows: fix `IFileDialog::SetFileTypes` dangling-pointer filter (undefined behavior); implement `type` / `allowedMimeTypes` filtering; report `size` as 64-bit (no >2GB overflow); normalize `file:///` identifiers to forward slashes; validate save-file writes; `saveFile` reports `not_found` for missing sources.
+* Linux: validate stream states in `saveFile` / `withData` reads and report `not_found` / `io_error` instead of silently succeeding; add `media` filter; hide the "All files" bypass when a specific type filter is requested.
+* Update iOS / macOS podspec metadata to match the package version.
+
 ## 1.2.1
 
 * Require Flutter 3.44+ (Dart 3.12+) to match Swift Package Manager plugin support with `FlutterFramework`.

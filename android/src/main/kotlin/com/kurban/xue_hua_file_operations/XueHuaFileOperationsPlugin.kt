@@ -16,6 +16,7 @@ import android.provider.Settings
 import android.webkit.MimeTypeMap
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
@@ -51,11 +52,16 @@ class XueHuaFileOperationsPlugin :
     private var pendingSaveFileName: String = "file"
     private var pendingGalleryRequest: GalleryRequest? = null
     private var pendingPermissionOnly: Boolean = false
+    private var pendingSingleAsMultiple: Boolean = false
     private var openDocumentLauncher: ActivityResultLauncher<Array<String>>? = null
     private var openMultipleDocumentsLauncher: ActivityResultLauncher<Array<String>>? = null
     private var openDocumentTreeLauncher: ActivityResultLauncher<Uri?>? = null
     private var createDocumentLauncher: ActivityResultLauncher<Pair<String, String>>? = null
     private var writeStoragePermissionLauncher: ActivityResultLauncher<String>? = null
+    private var pickVisualMediaLauncher: ActivityResultLauncher<PickVisualMediaRequest>? = null
+    private var pickMultipleVisualMediaLauncher:
+        ActivityResultLauncher<PickVisualMediaRequest>? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private class GalleryRequest(
         val fileName: String,
@@ -125,41 +131,88 @@ class XueHuaFileOperationsPlugin :
     }
 
     private fun mimeTypesFromArgs(call: MethodCall): Array<String> {
-        val mimeTypes = call.argument<List<String>>("allowedMimeTypes")
-        if (!mimeTypes.isNullOrEmpty()) {
-            return mimeTypes.toTypedArray()
+        // Merge MIME types and extension-derived MIME types (same as iOS).
+        val merged = mutableListOf<String>()
+        call.argument<List<String>>("allowedMimeTypes")?.let { merged.addAll(it) }
+        call.argument<List<String>>("allowedExtensions")?.forEach { ext ->
+            val clean = ext.removePrefix(".")
+            MimeTypeMap.getSingleton().getMimeTypeFromExtension(clean)?.let { merged.add(it) }
         }
-        val extensions = call.argument<List<String>>("allowedExtensions")
-        if (!extensions.isNullOrEmpty()) {
-            val mapped = extensions.mapNotNull { ext ->
-                val clean = ext.removePrefix(".")
-                MimeTypeMap.getSingleton().getMimeTypeFromExtension(clean)
-            }.distinct()
-            if (mapped.isNotEmpty()) return mapped.toTypedArray()
+        if (merged.isNotEmpty()) {
+            return merged.distinct().toTypedArray()
         }
         return when (call.argument<String>("type")) {
             "image" -> arrayOf("image/*")
             "video" -> arrayOf("video/*")
+            "media" -> arrayOf("image/*", "video/*")
             "audio" -> arrayOf("audio/*")
             else -> arrayOf("*/*")
         }
     }
 
+    /**
+     * Returns a Photo Picker request when the call targets media (image /
+     * video) without custom MIME / extension filters, otherwise null (SAF).
+     */
+    private fun photoPickerRequest(call: MethodCall): PickVisualMediaRequest? {
+        if (!call.argument<List<String>>("allowedMimeTypes").isNullOrEmpty()) return null
+        if (!call.argument<List<String>>("allowedExtensions").isNullOrEmpty()) return null
+        val mediaType = when (call.argument<String>("type")) {
+            "image" -> ActivityResultContracts.PickVisualMedia.ImageOnly
+            "video" -> ActivityResultContracts.PickVisualMedia.VideoOnly
+            "media" -> ActivityResultContracts.PickVisualMedia.ImageAndVideo
+            else -> return null
+        }
+        return PickVisualMediaRequest(mediaType)
+    }
+
     private fun pickFile(call: MethodCall, result: Result) {
         ensureActivity(result) ?: return
-        val launcher = openDocumentLauncher ?: return
+        val photoRequest = photoPickerRequest(call)
         pendingResult = result
         pendingWithData = call.argument<Boolean>("withData") ?: false
         pendingMaxFiles = null
+        if (photoRequest != null) {
+            val launcher = pickVisualMediaLauncher
+            if (launcher != null) {
+                launcher.launch(photoRequest)
+                return
+            }
+        }
+        val launcher = openDocumentLauncher ?: run {
+            clearPending()
+            return
+        }
         launcher.launch(mimeTypesFromArgs(call))
     }
 
     private fun pickFiles(call: MethodCall, result: Result) {
         ensureActivity(result) ?: return
-        val launcher = openMultipleDocumentsLauncher ?: return
+        val photoRequest = photoPickerRequest(call)
         pendingResult = result
         pendingWithData = call.argument<Boolean>("withData") ?: false
         pendingMaxFiles = call.argument<Int>("maxFiles")
+        if (photoRequest != null) {
+            // Photo Picker enforces maxFiles == 1 via the single-select
+            // contract; larger limits are validated after selection.
+            if (pendingMaxFiles == 1) {
+                val single = pickVisualMediaLauncher
+                if (single != null) {
+                    pendingSingleAsMultiple = true
+                    single.launch(photoRequest)
+                    return
+                }
+            }
+            val launcher = pickMultipleVisualMediaLauncher
+            if (launcher != null) {
+                launcher.launch(photoRequest)
+                return
+            }
+        }
+        val launcher = openMultipleDocumentsLauncher ?: run {
+            clearPending()
+            return
+        }
         launcher.launch(mimeTypesFromArgs(call))
     }
 
@@ -549,41 +602,63 @@ class XueHuaFileOperationsPlugin :
 
     private fun onOpenDocumentResult(uri: Uri?) {
         val result = pendingResult ?: return
-        try {
-            if (uri == null) {
-                result.success(null)
-            } else {
-                result.success(mapOf("file" to uriToMap(uri, pendingWithData)))
+        val withData = pendingWithData
+        val asMultiple = pendingSingleAsMultiple
+        val ctx: Context? = activity ?: applicationContext
+        clearPending()
+        if (uri == null) {
+            result.success(null)
+            return
+        }
+        if (ctx == null) {
+            result.error("unknown", "Context is not available", null)
+            return
+        }
+        thread {
+            try {
+                val map = uriToMap(ctx, uri, withData)
+                mainHandler.post {
+                    if (asMultiple) {
+                        result.success(mapOf("files" to listOf(map)))
+                    } else {
+                        result.success(mapOf("file" to map))
+                    }
+                }
+            } catch (e: Exception) {
+                mainHandler.post { result.error("io_error", e.message, null) }
             }
-        } catch (e: Exception) {
-            result.error("io_error", e.message, null)
-        } finally {
-            clearPending()
         }
     }
 
     private fun onOpenMultipleDocumentsResult(uris: List<Uri>) {
         val result = pendingResult ?: return
-        try {
-            if (uris.isEmpty()) {
-                result.success(null)
-            } else {
-                val max = pendingMaxFiles
-                if (max != null && uris.size > max) {
-                    result.error(
-                        "too_many_files",
-                        "Selected ${uris.size} files but maxFiles is $max",
-                        mapOf("selected" to uris.size, "maxFiles" to max)
-                    )
-                } else {
-                    val files = uris.map { uriToMap(it, pendingWithData) }
-                    result.success(mapOf("files" to files))
-                }
+        val withData = pendingWithData
+        val max = pendingMaxFiles
+        val ctx: Context? = activity ?: applicationContext
+        clearPending()
+        if (uris.isEmpty()) {
+            result.success(null)
+            return
+        }
+        if (max != null && uris.size > max) {
+            result.error(
+                "too_many_files",
+                "Selected ${uris.size} files but maxFiles is $max",
+                mapOf("selected" to uris.size, "maxFiles" to max)
+            )
+            return
+        }
+        if (ctx == null) {
+            result.error("unknown", "Context is not available", null)
+            return
+        }
+        thread {
+            try {
+                val files = uris.map { uriToMap(ctx, it, withData) }
+                mainHandler.post { result.success(mapOf("files" to files)) }
+            } catch (e: Exception) {
+                mainHandler.post { result.error("io_error", e.message, null) }
             }
-        } catch (e: Exception) {
-            result.error("io_error", e.message, null)
-        } finally {
-            clearPending()
         }
     }
 
@@ -618,44 +693,58 @@ class XueHuaFileOperationsPlugin :
 
     private fun onCreateDocumentResult(uri: Uri?) {
         val result = pendingResult ?: return
-        try {
-            if (uri == null) {
-                result.success(null)
-            } else {
-                writeToUri(uri)
-                result.success(
-                    mapOf(
-                        "path" to uri.toString(),
-                        "name" to pendingSaveFileName
+        val bytes = pendingSaveBytes
+        val sourcePath = pendingSaveSourcePath
+        val fileName = pendingSaveFileName
+        val ctx: Context? = activity ?: applicationContext
+        clearPending()
+        if (uri == null) {
+            result.success(null)
+            return
+        }
+        if (ctx == null) {
+            result.error("unknown", "Context is not available", null)
+            return
+        }
+        thread {
+            try {
+                writeToUri(ctx, uri, bytes, sourcePath)
+                mainHandler.post {
+                    result.success(
+                        mapOf(
+                            "path" to uri.toString(),
+                            "name" to fileName
+                        )
                     )
-                )
+                }
+            } catch (e: FileNotFoundException) {
+                mainHandler.post { result.error("not_found", e.message, null) }
+            } catch (e: Exception) {
+                mainHandler.post { result.error("io_error", e.message, null) }
             }
-        } catch (e: Exception) {
-            result.error("io_error", e.message, null)
-        } finally {
-            clearPending()
         }
     }
 
-    private fun writeToUri(uri: Uri) {
-        val act = activity ?: throw IllegalStateException("No activity")
-        act.contentResolver.openOutputStream(uri)?.use { out ->
-            val bytes = pendingSaveBytes
+    private fun writeToUri(ctx: Context, uri: Uri, bytes: ByteArray?, sourcePath: String?) {
+        ctx.contentResolver.openOutputStream(uri)?.use { out ->
             if (bytes != null) {
                 out.write(bytes)
             } else {
-                val source = pendingSaveSourcePath
+                val source = sourcePath
                     ?: throw IllegalArgumentException("sourcePath missing")
-                FileInputStream(File(source)).use { input ->
+                val sourceFile = File(source)
+                if (!sourceFile.exists()) {
+                    throw FileNotFoundException("File not found: $source")
+                }
+                FileInputStream(sourceFile).use { input ->
                     input.copyTo(out)
                 }
             }
         } ?: throw IllegalStateException("Unable to open output stream")
     }
 
-    private fun uriToMap(uri: Uri, withData: Boolean): Map<String, Any?> {
-        val act = activity ?: throw IllegalStateException("No activity")
-        val resolver = act.contentResolver
+    private fun uriToMap(ctx: Context, uri: Uri, withData: Boolean): Map<String, Any?> {
+        val resolver = ctx.contentResolver
         var name = uri.lastPathSegment ?: "file"
         var size = 0L
 
@@ -668,7 +757,7 @@ class XueHuaFileOperationsPlugin :
             }
         }
 
-        val cacheFile = copyToCache(uri, name)
+        val cacheFile = copyToCache(ctx, uri, name)
         val bytes: ByteArray? = if (withData) {
             cacheFile.readBytes()
         } else {
@@ -682,20 +771,19 @@ class XueHuaFileOperationsPlugin :
 
         return mapOf(
             "name" to name,
-            "size" to size.toInt(),
+            "size" to size,
             "path" to cacheFile.absolutePath,
             "bytes" to bytes,
             "identifier" to uri.toString()
         )
     }
 
-    private fun copyToCache(uri: Uri, name: String): File {
-        val act = activity ?: throw IllegalStateException("No activity")
-        val dir = File(act.cacheDir, "xue_hua_file_operations")
+    private fun copyToCache(ctx: Context, uri: Uri, name: String): File {
+        val dir = File(ctx.cacheDir, "xue_hua_file_operations")
         if (!dir.exists()) dir.mkdirs()
         val safeName = name.replace(Regex("[\\\\/]+"), "_")
         val outFile = File(dir, "${System.currentTimeMillis()}_$safeName")
-        act.contentResolver.openInputStream(uri)?.use { input ->
+        ctx.contentResolver.openInputStream(uri)?.use { input ->
             FileOutputStream(outFile).use { output ->
                 input.copyTo(output)
             }
@@ -712,6 +800,7 @@ class XueHuaFileOperationsPlugin :
         pendingSaveFileName = "file"
         pendingGalleryRequest = null
         pendingPermissionOnly = false
+        pendingSingleAsMultiple = false
     }
 
     private fun registerLaunchers(componentActivity: ComponentActivity) {
@@ -737,6 +826,14 @@ class XueHuaFileOperationsPlugin :
             "xue_hua_file_operations/write_storage_permission",
             ActivityResultContracts.RequestPermission()
         ) { granted -> onWriteStoragePermissionResult(granted) }
+        pickVisualMediaLauncher = registry.register(
+            "xue_hua_file_operations/pick_visual_media",
+            ActivityResultContracts.PickVisualMedia()
+        ) { uri -> onOpenDocumentResult(uri) }
+        pickMultipleVisualMediaLauncher = registry.register(
+            "xue_hua_file_operations/pick_multiple_visual_media",
+            ActivityResultContracts.PickMultipleVisualMedia()
+        ) { uris -> onOpenMultipleDocumentsResult(uris) }
     }
 
     private fun unregisterLaunchers() {
@@ -745,11 +842,22 @@ class XueHuaFileOperationsPlugin :
         openDocumentTreeLauncher?.unregister()
         createDocumentLauncher?.unregister()
         writeStoragePermissionLauncher?.unregister()
+        pickVisualMediaLauncher?.unregister()
+        pickMultipleVisualMediaLauncher?.unregister()
         openDocumentLauncher = null
         openMultipleDocumentsLauncher = null
         openDocumentTreeLauncher = null
         createDocumentLauncher = null
         writeStoragePermissionLauncher = null
+        pickVisualMediaLauncher = null
+        pickMultipleVisualMediaLauncher = null
+    }
+
+    /** Fails any in-flight operation so the Dart Future never hangs. */
+    private fun failPendingOnDetach() {
+        val result = pendingResult ?: return
+        clearPending()
+        result.error("cancelled", "Activity was detached during the operation", null)
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
@@ -766,6 +874,7 @@ class XueHuaFileOperationsPlugin :
     }
 
     override fun onDetachedFromActivityForConfigChanges() {
+        failPendingOnDetach()
         unregisterLaunchers()
         activity = null
     }
@@ -775,6 +884,7 @@ class XueHuaFileOperationsPlugin :
     }
 
     override fun onDetachedFromActivity() {
+        failPendingOnDetach()
         unregisterLaunchers()
         activity = null
     }

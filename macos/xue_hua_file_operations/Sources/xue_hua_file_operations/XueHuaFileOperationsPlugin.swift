@@ -61,6 +61,7 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin {
         switch args?["type"] as? String {
         case "image": return [.image]
         case "video": return [.movie]
+        case "media": return [.image, .movie]
         case "audio": return [.audio]
         default: return []
         }
@@ -113,26 +114,32 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin {
                 return
             }
 
-            if multiple {
-                if let max = maxFiles, urls.count > max {
-                    result(FlutterError(
-                        code: "too_many_files",
-                        message: "Selected \(urls.count) files but maxFiles is \(max)",
-                        details: ["selected": urls.count, "maxFiles": max]
-                    ))
-                    return
-                }
+            if multiple, let max = maxFiles, urls.count > max {
+                result(FlutterError(
+                    code: "too_many_files",
+                    message: "Selected \(urls.count) files but maxFiles is \(max)",
+                    details: ["selected": urls.count, "maxFiles": max]
+                ))
+                return
+            }
+
+            DispatchQueue.global(qos: .userInitiated).async {
                 do {
-                    let files = try urls.map { try Self.fileMap(from: $0, withData: withData) }
-                    result(["files": files])
+                    if multiple {
+                        let files = try urls.map { try Self.fileMap(from: $0, withData: withData) }
+                        DispatchQueue.main.async { result(["files": files]) }
+                    } else {
+                        let file = try Self.fileMap(from: urls[0], withData: withData)
+                        DispatchQueue.main.async { result(["file": file]) }
+                    }
                 } catch {
-                    result(FlutterError(code: "io_error", message: error.localizedDescription, details: nil))
-                }
-            } else {
-                do {
-                    try result(["file": Self.fileMap(from: urls[0], withData: withData)])
-                } catch {
-                    result(FlutterError(code: "io_error", message: error.localizedDescription, details: nil))
+                    DispatchQueue.main.async {
+                        result(FlutterError(
+                            code: "io_error",
+                            message: error.localizedDescription,
+                            details: nil
+                        ))
+                    }
                 }
             }
         }
@@ -176,6 +183,22 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin {
                     try flutterData.data.write(to: url, options: .atomic)
                 } else if let sourcePath = sourcePath {
                     let source = URL(fileURLWithPath: sourcePath)
+                    guard FileManager.default.fileExists(atPath: source.path) else {
+                        result(FlutterError(
+                            code: "not_found",
+                            message: "File not found: \(sourcePath)",
+                            details: nil
+                        ))
+                        return
+                    }
+                    // Sandbox: the source may be a security-scoped URL from an
+                    // earlier pick; accessing is a no-op for regular URLs.
+                    let access = source.startAccessingSecurityScopedResource()
+                    defer {
+                        if access {
+                            source.stopAccessingSecurityScopedResource()
+                        }
+                    }
                     if FileManager.default.fileExists(atPath: url.path) {
                         try FileManager.default.removeItem(at: url)
                     }
@@ -250,6 +273,15 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin {
     }
 
     private static func fileMap(from url: URL, withData: Bool) throws -> [String: Any?] {
+        // Sandbox: panel URLs carry an implicit grant, but scoped access is
+        // required for URLs resolved from bookmarks; harmless otherwise.
+        let access = url.startAccessingSecurityScopedResource()
+        defer {
+            if access {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
         let values = try url.resourceValues(forKeys: [.fileSizeKey, .nameKey])
         let name = values.name ?? url.lastPathComponent
         var size = values.fileSize ?? 0
