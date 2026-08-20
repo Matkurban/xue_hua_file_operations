@@ -15,7 +15,7 @@ A new Flutter project.
   s.source           = { :path => '.' }
   s.source_files = 'xue_hua_file_operations/Sources/xue_hua_file_operations/**/*'
   s.dependency 'Flutter'
-  s.platform = :ios, '14.0'
+  s.platform = :ios, '13.0'
   s.frameworks = 'Photos'
 
   # Flutter.framework does not contain a i386 slice.

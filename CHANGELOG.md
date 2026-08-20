@@ -1,3 +1,8 @@
+## 1.2.1
+
+* Require Flutter 3.44+ (Dart 3.12+) to match Swift Package Manager plugin support with `FlutterFramework`.
+* iOS: declare the plugin minimum as 13.0 (Flutter's default) so host apps no longer need to raise `IPHONEOS_DEPLOYMENT_TARGET` to 14.0. `UTType` document pickers and PhotoKit access levels still run on iOS 14+ with iOS 13 fallbacks.
+
 ## 1.2.0
 
 * iOS / macOS: always call `PHPhotoLibrary.requestAuthorization` so TCC can record this app (do not skip when `authorizationStatus` is already `.denied`).

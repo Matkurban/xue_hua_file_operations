@@ -25,7 +25,7 @@
 
 ```yaml
 dependencies:
-  xue_hua_file_operations: ^1.2.0
+  xue_hua_file_operations: ^1.2.1
 ```
 
 然后执行：
@@ -39,7 +39,7 @@ flutter pub get
 | 平台 | 是否支持 | 说明 |
 |------|----------|------|
 | Android | 是 | Storage Access Framework (SAF) / Activity Result API；`saveToGallery` 使用 MediaStore / 公共 Pictures |
-| iOS | 是 | `UIDocumentPicker` / 文档交互；`saveToGallery` 使用 PhotoKit |
+| iOS | 是（13.0+） | `UIDocumentPicker` / 文档交互；`saveToGallery` 使用 PhotoKit |
 | macOS | 是 | 原生 `NSOpenPanel` / `NSSavePanel`；`saveToGallery` 使用 PhotoKit |
 | Windows | 是 | 原生文件 / 文件夹对话框；`saveToGallery` 写入 Pictures / Videos |
 | Linux | 是 | 原生文件 / 文件夹对话框；`saveToGallery` 写入 XDG Pictures / Videos |
@@ -86,6 +86,8 @@ class MainActivity : FlutterFragmentActivity()
 ```
 
 ### iOS
+
+最低版本为 **iOS 13.0**（与 Flutter 默认的 `IPHONEOS_DEPLOYMENT_TARGET` 一致）。宿主应用无需为了使用本插件而升到 14.0。
 
 **权限（文档选择 / 保存 / 打开）：** 使用本插件的文档选择 / 保存 / 打开 API 时，无需额外在 Info.plist 中配置相册等隐私用途说明键。
 

@@ -25,7 +25,7 @@ Add the dependency to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  xue_hua_file_operations: ^1.2.0
+  xue_hua_file_operations: ^1.2.1
 ```
 
 Then run:
@@ -39,7 +39,7 @@ flutter pub get
 | Platform | Supported | Notes |
 |----------|-----------|--------|
 | Android | Yes | Storage Access Framework (SAF) / Activity Result APIs; `saveToGallery` uses MediaStore / public Pictures |
-| iOS | Yes | `UIDocumentPicker` / document interaction; `saveToGallery` uses PhotoKit |
+| iOS | Yes (13.0+) | `UIDocumentPicker` / document interaction; `saveToGallery` uses PhotoKit |
 | macOS | Yes | Native `NSOpenPanel` / `NSSavePanel`; `saveToGallery` uses PhotoKit |
 | Windows | Yes | Native file / folder dialogs; `saveToGallery` writes Pictures / Videos |
 | Linux | Yes | Native file / folder dialogs; `saveToGallery` writes XDG Pictures / Videos |
@@ -86,6 +86,8 @@ class MainActivity : FlutterFragmentActivity()
 ```
 
 ### iOS
+
+最低版本为 **iOS 13.0**（与 Flutter 默认 `IPHONEOS_DEPLOYMENT_TARGET` 一致）。宿主应用无需为了使用本插件而升到 14.0。
 
 **Permissions for document pick / save / open:** No extra Info.plist privacy keys (such as photo library usage descriptions) are required for those document-picker APIs.
 

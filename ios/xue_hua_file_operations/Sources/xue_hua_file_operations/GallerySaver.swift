@@ -3,11 +3,11 @@ import Photos
 
 enum GallerySaver {
     static func permissionStatus(call: FlutterMethodCall, result: @escaping FlutterResult) {
-        result(wireName(for: PHPhotoLibrary.authorizationStatus(for: accessLevel(from: call))))
+        result(wireName(for: currentStatus(forAlbum: wantsAlbumAccess(from: call))))
     }
 
     static func requestPermission(call: FlutterMethodCall, result: @escaping FlutterResult) {
-        requestAccess(accessLevel(from: call)) { status in
+        requestAccess(forAlbum: wantsAlbumAccess(from: call)) { status in
             result(wireName(for: status))
         }
     }
@@ -40,7 +40,6 @@ enum GallerySaver {
 
         let isVideo = type == "video"
         let wantsAlbum = !(albumName ?? "").isEmpty
-        let accessLevel: PHAccessLevel = wantsAlbum ? .readWrite : .addOnly
 
         do {
             let fileURL = try prepareFileURL(
@@ -48,7 +47,7 @@ enum GallerySaver {
                 bytes: flutterData?.data,
                 sourcePath: sourcePath
             )
-            requestAccess(accessLevel) { status in
+            requestAccess(forAlbum: wantsAlbum) { status in
                 switch status {
                 case .authorized:
                     let existingAlbum: PHAssetCollection?
@@ -65,15 +64,6 @@ enum GallerySaver {
                         existingAlbum: existingAlbum,
                         result: result
                     )
-                case .limited:
-                    performSave(
-                        fileURL: fileURL,
-                        createdTemp: true,
-                        isVideo: isVideo,
-                        albumName: nil,
-                        existingAlbum: nil,
-                        result: result
-                    )
                 case .denied, .restricted:
                     cleanupTempIfNeeded(fileURL, sourcePath: sourcePath)
                     result(FlutterError(
@@ -82,6 +72,7 @@ enum GallerySaver {
                         details: nil
                     ))
                 default:
+                    // limited (iOS 14+): save without a custom album.
                     // notDetermined / unknown after the prompt: still try to save.
                     performSave(
                         fileURL: fileURL,
@@ -104,36 +95,52 @@ enum GallerySaver {
         }
     }
 
-    private static func accessLevel(from call: FlutterMethodCall) -> PHAccessLevel {
-        let forAlbum = (call.arguments as? [String: Any])?["forAlbum"] as? Bool ?? false
-        return forAlbum ? .readWrite : .addOnly
+    private static func wantsAlbumAccess(from call: FlutterMethodCall) -> Bool {
+        (call.arguments as? [String: Any])?["forAlbum"] as? Bool ?? false
+    }
+
+    private static func currentStatus(forAlbum: Bool) -> PHAuthorizationStatus {
+        if #available(iOS 14.0, *) {
+            return PHPhotoLibrary.authorizationStatus(for: forAlbum ? .readWrite : .addOnly)
+        }
+        return PHPhotoLibrary.authorizationStatus()
     }
 
     private static func wireName(for status: PHAuthorizationStatus) -> String {
         switch status {
         case .authorized:
             return "granted"
-        case .limited:
-            return "limited"
         case .restricted:
             return "restricted"
         case .denied:
             return "permanentlyDenied"
         case .notDetermined:
             return "denied"
-        @unknown default:
+        default:
+            if #available(iOS 14.0, *), status == .limited {
+                return "limited"
+            }
             return "denied"
         }
     }
 
     private static func requestAccess(
-        _ level: PHAccessLevel,
+        forAlbum: Bool,
         completion: @escaping (PHAuthorizationStatus) -> Void
     ) {
         let apply = {
-            PHPhotoLibrary.requestAuthorization(for: level) { newStatus in
-                DispatchQueue.main.async {
-                    completion(newStatus)
+            if #available(iOS 14.0, *) {
+                PHPhotoLibrary.requestAuthorization(for: forAlbum ? .readWrite : .addOnly) {
+                    newStatus in
+                    DispatchQueue.main.async {
+                        completion(newStatus)
+                    }
+                }
+            } else {
+                PHPhotoLibrary.requestAuthorization { newStatus in
+                    DispatchQueue.main.async {
+                        completion(newStatus)
+                    }
                 }
             }
         }
