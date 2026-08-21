@@ -1,3 +1,9 @@
+# Changelog
+
+## 1.3.1
+
+- The Gradle tool version has been downgraded to 8.13.2.
+
 ## 1.3.0
 
 * **iOS: fix picking photos/videos.** `FileType.image` / `video` (without custom extension / MIME filters) now opens `PHPickerViewController` (iOS 14+) instead of the Files document picker, which cannot browse the photo library. iOS 13 falls back to the document picker.
