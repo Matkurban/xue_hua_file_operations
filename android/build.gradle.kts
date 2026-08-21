@@ -1,5 +1,5 @@
 group = "com.kurban.xue_hua_file_operations"
-version = "1.0-SNAPSHOT"
+version = "1.0.0"
 
 buildscript {
     val kotlinVersion = "2.3.20"
@@ -9,7 +9,7 @@ buildscript {
     }
 
     dependencies {
-        classpath("com.android.tools.build:gradle:9.0.1")
+        classpath("com.android.tools.build:gradle:8.13.2")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
     }
 }
