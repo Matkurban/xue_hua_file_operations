@@ -17,6 +17,7 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import androidx.core.net.toUri
 
 internal class GallerySaver(private val context: Context) {
     data class SaveResult(
@@ -152,11 +153,11 @@ internal class GallerySaver(private val context: Context) {
 
     private fun openSource(sourcePath: String): InputStream {
         if (sourcePath.startsWith("content://")) {
-            return context.contentResolver.openInputStream(Uri.parse(sourcePath))
+            return context.contentResolver.openInputStream(sourcePath.toUri())
                 ?: throw FileNotFoundException(sourcePath)
         }
         if (sourcePath.startsWith("file://")) {
-            val path = Uri.parse(sourcePath).path
+            val path = sourcePath.toUri().path
                 ?: throw FileNotFoundException(sourcePath)
             val file = File(path)
             if (!file.exists()) throw FileNotFoundException(path)

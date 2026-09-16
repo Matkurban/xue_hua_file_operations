@@ -35,6 +35,7 @@ import java.io.FileInputStream
 import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import kotlin.concurrent.thread
+import androidx.core.content.edit
 
 class XueHuaFileOperationsPlugin :
     FlutterPlugin,
@@ -60,7 +61,7 @@ class XueHuaFileOperationsPlugin :
     private var writeStoragePermissionLauncher: ActivityResultLauncher<String>? = null
     private var pickVisualMediaLauncher: ActivityResultLauncher<PickVisualMediaRequest>? = null
     private var pickMultipleVisualMediaLauncher:
-        ActivityResultLauncher<PickVisualMediaRequest>? = null
+            ActivityResultLauncher<PickVisualMediaRequest>? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private class GalleryRequest(
@@ -350,19 +351,19 @@ class XueHuaFileOperationsPlugin :
             .getBoolean(KEY_WRITE_STORAGE_REQUESTED, false)
         val act = activity
         val showRationale = act != null &&
-            ActivityCompat.shouldShowRequestPermissionRationale(
-                act,
-                Manifest.permission.WRITE_EXTERNAL_STORAGE
-            )
+                ActivityCompat.shouldShowRequestPermissionRationale(
+                    act,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE
+                )
         return if (!requested || showRationale) "denied" else "permanentlyDenied"
     }
 
     private fun markWriteStorageRequested() {
         val ctx = activity ?: applicationContext ?: return
         ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean(KEY_WRITE_STORAGE_REQUESTED, true)
-            .apply()
+            .edit {
+                putBoolean(KEY_WRITE_STORAGE_REQUESTED, true)
+            }
     }
 
     private fun executeGallerySave(request: GalleryRequest, result: Result) {
@@ -498,6 +499,7 @@ class XueHuaFileOperationsPlugin :
                         }
                     }
                 }
+
                 !identifier.contains("://") -> {
                     val file = File(identifier)
                     if (file.exists()) {
@@ -527,10 +529,12 @@ class XueHuaFileOperationsPlugin :
                     return
                 }
             }
+
             !identifier.isNullOrEmpty() && identifier.contains("://") -> {
                 // content:// (or other non-file schemes) — open directly
                 identifier.toUri()
             }
+
             else -> {
                 result.error("not_found", "File not found: ${path ?: identifier}", null)
                 return

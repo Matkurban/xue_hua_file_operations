@@ -37,10 +37,10 @@ android {
 
     sourceSets {
         getByName("main") {
-            java.directories.add("src/main/kotlin")
+            java.srcDirs("src/main/kotlin")
         }
         getByName("test") {
-            java.directories.add("src/test/kotlin")
+            java.srcDirs("src/test/kotlin")
         }
     }
 
@@ -72,8 +72,8 @@ kotlin {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.15.0")
-    implementation("androidx.activity:activity-ktx:1.9.3")
+    implementation("androidx.core:core-ktx:1.18.0")
+    implementation("androidx.activity:activity-ktx:1.13.0")
     testImplementation("org.jetbrains.kotlin:kotlin-test")
-    testImplementation("org.mockito:mockito-core:5.0.0")
+    testImplementation("org.mockito:mockito-core:5.23.0")
 }
