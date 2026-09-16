@@ -4,8 +4,6 @@ English | [中文](README_zh.md)
 
 Cross-platform Flutter plugin for picking files and directories, saving files (save-as), saving images/videos to the gallery, and opening files with the system default application.
 
-**Repository:** [https://github.com/Matkurban/xue_hua_file_operations](https://github.com/Matkurban/xue_hua_file_operations)
-
 ## Features
 
 - Pick a single file (`pickFile`) or multiple files (`pickFiles`)
@@ -25,7 +23,7 @@ Add the dependency to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  xue_hua_file_operations: ^1.2.1
+  xue_hua_file_operations: ^lasted
 ```
 
 Then run:
@@ -36,30 +34,30 @@ flutter pub get
 
 ## Supported platforms
 
-| Platform | Supported | Notes |
-|----------|-----------|--------|
-| Android | Yes | Storage Access Framework (SAF) / Activity Result APIs; `saveToGallery` uses MediaStore / public Pictures |
-| iOS | Yes (13.0+) | Media uses `PHPickerViewController` (iOS 14+), other types use `UIDocumentPicker`; `saveToGallery` uses PhotoKit |
-| macOS | Yes | Native `NSOpenPanel` / `NSSavePanel`; `saveToGallery` uses PhotoKit |
-| Windows | Yes | Native file / folder dialogs; `saveToGallery` writes Pictures / Videos |
-| Linux | Yes | Native file / folder dialogs; `saveToGallery` writes XDG Pictures / Videos |
-| Web | Yes | HTML `<input type="file">` and Blob download; `saveToGallery` downloads the file |
+| Platform | Supported   | Notes                                                                                                            |
+|----------|-------------|------------------------------------------------------------------------------------------------------------------|
+| Android  | Yes         | Storage Access Framework (SAF) / Activity Result APIs; `saveToGallery` uses MediaStore / public Pictures         |
+| iOS      | Yes (13.0+) | Media uses `PHPickerViewController` (iOS 14+), other types use `UIDocumentPicker`; `saveToGallery` uses PhotoKit |
+| macOS    | Yes         | Native `NSOpenPanel` / `NSSavePanel`; `saveToGallery` uses PhotoKit                                              |
+| Windows  | Yes         | Native file / folder dialogs; `saveToGallery` writes Pictures / Videos                                           |
+| Linux    | Yes         | Native file / folder dialogs; `saveToGallery` writes XDG Pictures / Videos                                       |
+| Web      | Yes         | HTML `<input type="file">` and Blob download; `saveToGallery` downloads the file                                 |
 
 ### Path and identifier behavior
 
-| Platform | `path` | Notes |
-|----------|--------|--------|
-| Android / iOS / Desktop | Usually non-null (cache copy or filesystem path) | `identifier` keeps the native URI / URL / bookmark |
-| Web | Always `null` | `bytes` are always loaded; save triggers a download; open needs an object-URL `identifier` |
+| Platform                | `path`                                           | Notes                                                                                      |
+|-------------------------|--------------------------------------------------|--------------------------------------------------------------------------------------------|
+| Android / iOS / Desktop | Usually non-null (cache copy or filesystem path) | `identifier` keeps the native URI / URL / bookmark                                         |
+| Web                     | Always `null`                                    | `bytes` are always loaded; save triggers a download; open needs an object-URL `identifier` |
 
 ### Directory picking
 
-| Platform | What you get | Notes |
-|----------|--------------|--------|
-| Android | SAF tree URI in `path` / `identifier` | Persistable read permission is taken when possible |
-| iOS | Display `path` + security-scoped **bookmark** in `identifier` | Prefer `identifier` for later access / `openFile`; raw path alone is not durable |
-| macOS / Windows / Linux | Real filesystem path | Native folder dialogs |
-| Web | Folder name via `webkitdirectory` | Not a real FS path; capability depends on the browser |
+| Platform                | What you get                                                  | Notes                                                                            |
+|-------------------------|---------------------------------------------------------------|----------------------------------------------------------------------------------|
+| Android                 | SAF tree URI in `path` / `identifier`                         | Persistable read permission is taken when possible                               |
+| iOS                     | Display `path` + security-scoped **bookmark** in `identifier` | Prefer `identifier` for later access / `openFile`; raw path alone is not durable |
+| macOS / Windows / Linux | Real filesystem path                                          | Native folder dialogs                                                            |
+| Web                     | Folder name via `webkitdirectory`                             | Not a real FS path; capability depends on the browser                            |
 
 ## Platform setup and permissions
 
@@ -233,13 +231,13 @@ Future<PlatformFile?> pickFile({
 })
 ```
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `withData` | `bool` | `false` | When `true`, load file contents into `PlatformFile.bytes`. On Web, bytes are always loaded regardless of this flag. |
-| `dialogTitle` | `String?` | `null` | Optional title for the native dialog where supported (desktop). May be ignored on some platforms (e.g. Android SAF, Web). |
-| `type` | `FileType` | `FileType.any` | High-level filter: `any`, `media`, `image`, `video`, `audio`, or `custom`. On iOS / Android, `image` / `video` / `media` (without extension / MIME filters) opens the system photo picker (iOS `PHPickerViewController`, Android Photo Picker) so items can be selected from the photo library. |
-| `allowedExtensions` | `List<String>?` | `null` | Allowed extensions (with or without leading `.`), e.g. `['pdf', 'txt']`. Used especially with `FileType.custom` or as an additional filter. |
-| `allowedMimeTypes` | `List<String>?` | `null` | Allowed MIME types, e.g. `['application/pdf']`. Behavior depends on the platform picker. |
+| Parameter           | Type            | Default        | Description                                                                                                                                                                                                                                                                                     |
+|---------------------|-----------------|----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `withData`          | `bool`          | `false`        | When `true`, load file contents into `PlatformFile.bytes`. On Web, bytes are always loaded regardless of this flag.                                                                                                                                                                             |
+| `dialogTitle`       | `String?`       | `null`         | Optional title for the native dialog where supported (desktop). May be ignored on some platforms (e.g. Android SAF, Web).                                                                                                                                                                       |
+| `type`              | `FileType`      | `FileType.any` | High-level filter: `any`, `media`, `image`, `video`, `audio`, or `custom`. On iOS / Android, `image` / `video` / `media` (without extension / MIME filters) opens the system photo picker (iOS `PHPickerViewController`, Android Photo Picker) so items can be selected from the photo library. |
+| `allowedExtensions` | `List<String>?` | `null`         | Allowed extensions (with or without leading `.`), e.g. `['pdf', 'txt']`. Used especially with `FileType.custom` or as an additional filter.                                                                                                                                                     |
+| `allowedMimeTypes`  | `List<String>?` | `null`         | Allowed MIME types, e.g. `['application/pdf']`. Behavior depends on the platform picker.                                                                                                                                                                                                        |
 
 **Returns:** `PlatformFile?` — selected file, or `null` on cancel.
 
@@ -258,14 +256,14 @@ Future<List<PlatformFile>?> pickFiles({
 })
 ```
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `maxFiles` | `int?` | `null` | Maximum number of files allowed. `null` means unlimited. If provided, must be `>= 1`. If the user selects more than `maxFiles`, throws `FileOperationsException` with `ErrorCode.tooManyFiles`. |
-| `withData` | `bool` | `false` | Same as `pickFile`. |
-| `dialogTitle` | `String?` | `null` | Same as `pickFile`. |
-| `type` | `FileType` | `FileType.any` | Same as `pickFile`. |
-| `allowedExtensions` | `List<String>?` | `null` | Same as `pickFile`. |
-| `allowedMimeTypes` | `List<String>?` | `null` | Same as `pickFile`. |
+| Parameter           | Type            | Default        | Description                                                                                                                                                                                     |
+|---------------------|-----------------|----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `maxFiles`          | `int?`          | `null`         | Maximum number of files allowed. `null` means unlimited. If provided, must be `>= 1`. If the user selects more than `maxFiles`, throws `FileOperationsException` with `ErrorCode.tooManyFiles`. |
+| `withData`          | `bool`          | `false`        | Same as `pickFile`.                                                                                                                                                                             |
+| `dialogTitle`       | `String?`       | `null`         | Same as `pickFile`.                                                                                                                                                                             |
+| `type`              | `FileType`      | `FileType.any` | Same as `pickFile`.                                                                                                                                                                             |
+| `allowedExtensions` | `List<String>?` | `null`         | Same as `pickFile`.                                                                                                                                                                             |
+| `allowedMimeTypes`  | `List<String>?` | `null`         | Same as `pickFile`.                                                                                                                                                                             |
 
 **Returns:** `List<PlatformFile>?` — selected files, or `null` on cancel.
 
@@ -279,9 +277,9 @@ Pick a directory. Returns `null` if the user cancels.
 Future<DirectoryResult?> pickDirectory({String? dialogTitle})
 ```
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `dialogTitle` | `String?` | `null` | Optional title for the native folder dialog where supported. |
+| Parameter     | Type      | Default | Description                                                  |
+|---------------|-----------|---------|--------------------------------------------------------------|
+| `dialogTitle` | `String?` | `null`  | Optional title for the native folder dialog where supported. |
 
 **Returns:** `DirectoryResult?` — selected directory info, or `null` on cancel.
 
@@ -301,13 +299,13 @@ Future<SaveFileResult?> saveFile({
 })
 ```
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `fileName` | `String` | *(required)* | Suggested file name shown in the save dialog / download name on Web. |
-| `bytes` | `Uint8List?` | `null` | File contents to write. Required on Web. On other platforms, provide `bytes` and/or `sourcePath`. |
-| `sourcePath` | `String?` | `null` | Path of an existing file to copy into the chosen destination. Not supported on Web. |
-| `allowedExtensions` | `List<String>?` | `null` | Optional extension filter / hint for the save dialog where supported. |
-| `dialogTitle` | `String?` | `null` | Optional title for the native save dialog where supported. |
+| Parameter           | Type            | Default      | Description                                                                                       |
+|---------------------|-----------------|--------------|---------------------------------------------------------------------------------------------------|
+| `fileName`          | `String`        | *(required)* | Suggested file name shown in the save dialog / download name on Web.                              |
+| `bytes`             | `Uint8List?`    | `null`       | File contents to write. Required on Web. On other platforms, provide `bytes` and/or `sourcePath`. |
+| `sourcePath`        | `String?`       | `null`       | Path of an existing file to copy into the chosen destination. Not supported on Web.               |
+| `allowedExtensions` | `List<String>?` | `null`       | Optional extension filter / hint for the save dialog where supported.                             |
+| `dialogTitle`       | `String?`       | `null`       | Optional title for the native save dialog where supported.                                        |
 
 **Returns:** `SaveFileResult?` — save result, or `null` on cancel.
 
@@ -330,13 +328,13 @@ Future<SaveToGalleryResult> saveToGallery({
 })
 ```
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `fileName` | `String` | *(required)* | Display name including extension (used for MIME / type inference). |
-| `bytes` | `Uint8List?` | `null` | File contents to write. Provide `bytes` and/or `sourcePath`. |
-| `sourcePath` | `String?` | `null` | Path (or Android `content://` URI) of an existing image/video to copy. |
-| `type` | `GalleryMediaType?` | inferred | `image` or `video`. Inferred from `fileName` / `sourcePath` when omitted. |
-| `albumName` | `String?` | `null` | Optional album / subdirectory. Custom albums on iOS/macOS require full photo library access. |
+| Parameter    | Type                | Default      | Description                                                                                  |
+|--------------|---------------------|--------------|----------------------------------------------------------------------------------------------|
+| `fileName`   | `String`            | *(required)* | Display name including extension (used for MIME / type inference).                           |
+| `bytes`      | `Uint8List?`        | `null`       | File contents to write. Provide `bytes` and/or `sourcePath`.                                 |
+| `sourcePath` | `String?`           | `null`       | Path (or Android `content://` URI) of an existing image/video to copy.                       |
+| `type`       | `GalleryMediaType?` | inferred     | `image` or `video`. Inferred from `fileName` / `sourcePath` when omitted.                    |
+| `albumName`  | `String?`           | `null`       | Optional album / subdirectory. Custom albums on iOS/macOS require full photo library access. |
 
 **Returns:** `SaveToGalleryResult` — `name`, optional filesystem `path`, and native `identifier`.
 
@@ -358,30 +356,30 @@ Future<GalleryPermissionStatus> galleryPermissionStatus({bool forAlbum = false})
 Future<GalleryPermissionStatus> requestGalleryPermission({bool forAlbum = false});
 ```
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
+| Parameter  | Type   | Default | Description                                                               |
+|------------|--------|---------|---------------------------------------------------------------------------|
 | `forAlbum` | `bool` | `false` | `true` requests read/write access needed for `saveToGallery(albumName:)`. |
 
 `galleryPermissionStatus` never shows a prompt. `requestGalleryPermission` shows the system dialog **only** while PhotoKit status is still `notDetermined` ([WWDC20 10641](https://developer.apple.com/videos/play/wwdc2020/10641/), [requestAuthorization(for:handler:)](https://developer.apple.com/documentation/photos/phphotolibrary/requestauthorization(for:handler:))).
 
-| PhotoKit `PHAuthorizationStatus` | Plugin status | Meaning |
-|----------------------------------|---------------|---------|
-| `notDetermined` | `denied` | Not asked yet; a request can still show a dialog |
-| `authorized` | `granted` | Full Photos access |
-| `limited` | `limited` | Limited library (iOS 14+); save works, custom albums do not |
-| `restricted` | `restricted` | OS blocked access (parental controls / MDM) |
-| `denied` | `permanentlyDenied` | User refused; Apple will not prompt again |
+| PhotoKit `PHAuthorizationStatus` | Plugin status       | Meaning                                                     |
+|----------------------------------|---------------------|-------------------------------------------------------------|
+| `notDetermined`                  | `denied`            | Not asked yet; a request can still show a dialog            |
+| `authorized`                     | `granted`           | Full Photos access                                          |
+| `limited`                        | `limited`           | Limited library (iOS 14+); save works, custom albums do not |
+| `restricted`                     | `restricted`        | OS blocked access (parental controls / MDM)                 |
+| `denied`                         | `permanentlyDenied` | User refused; Apple will not prompt again                   |
 
 Saving without a custom album is allowed when `status.isGranted || status.isLimited`. Custom albums need `status.isGranted`. If `status.isPermanentlyDenied` or `status.isRestricted`, call `openAppSettings()` after a user tap — do not jump to Settings from `requestGalleryPermission` itself.
 
-| Platform | Typical result |
-|----------|----------------|
-| iOS | PhotoKit `addOnly` or `readWrite` (`forAlbum`) |
-| macOS | Always PhotoKit `readWrite` (`forAlbum` ignored; no add-only row in System Settings → Photos) |
-| Android 24–28 | `WRITE_EXTERNAL_STORAGE` |
-| Android 29+ | Always `granted` (no `READ_MEDIA_*`) |
-| Windows / Linux | Always `granted` |
-| Web | Always `granted` |
+| Platform        | Typical result                                                                                |
+|-----------------|-----------------------------------------------------------------------------------------------|
+| iOS             | PhotoKit `addOnly` or `readWrite` (`forAlbum`)                                                |
+| macOS           | Always PhotoKit `readWrite` (`forAlbum` ignored; no add-only row in System Settings → Photos) |
+| Android 24–28   | `WRITE_EXTERNAL_STORAGE`                                                                      |
+| Android 29+     | Always `granted` (no `READ_MEDIA_*`)                                                          |
+| Windows / Linux | Always `granted`                                                                              |
+| Web             | Always `granted`                                                                              |
 
 ### `openAppSettings`
 
@@ -391,14 +389,14 @@ Open the OS settings UI so the user can enable Photos / storage access after a p
 Future<void> openAppSettings()
 ```
 
-| Platform | Behavior |
-|----------|----------|
-| iOS | App Settings via `UIApplication.openSettingsURLString` |
-| macOS | System Settings → Privacy & Security → Photos |
-| Android | Application details settings |
-| Windows | Windows Settings privacy / apps page |
-| Linux | No-op (no app Photos toggle) |
-| Web | No-op |
+| Platform | Behavior                                               |
+|----------|--------------------------------------------------------|
+| iOS      | App Settings via `UIApplication.openSettingsURLString` |
+| macOS    | System Settings → Privacy & Security → Photos          |
+| Android  | Application details settings                           |
+| Windows  | Windows Settings privacy / apps page                   |
+| Linux    | No-op (no app Photos toggle)                           |
+| Web      | No-op                                                  |
 
 ### `openFile`
 
@@ -408,10 +406,10 @@ Open a file with the system default application.
 Future<void> openFile({String? path, String? identifier})
 ```
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `path` | `String?` | `null` | Filesystem path (or platform-accessible path) to open. |
-| `identifier` | `String?` | `null` | Native identifier: Android content URI, iOS bookmark/URL, Web object URL, etc. |
+| Parameter    | Type      | Default | Description                                                                    |
+|--------------|-----------|---------|--------------------------------------------------------------------------------|
+| `path`       | `String?` | `null`  | Filesystem path (or platform-accessible path) to open.                         |
+| `identifier` | `String?` | `null`  | Native identifier: Android content URI, iOS bookmark/URL, Web object URL, etc. |
 
 At least one of `path` or `identifier` must be non-empty.
 
@@ -426,100 +424,100 @@ At least one of `path` or `identifier` must be non-empty.
 
 Represents a file selected or produced by the plugin.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `name` | `String` | File name (e.g. `report.pdf`) |
-| `size` | `int` | Size in bytes |
-| `path` | `String?` | Local path when available; `null` on Web |
-| `bytes` | `Uint8List?` | File contents when `withData: true` or on Web |
-| `identifier` | `String?` | Native unique id (URI, bookmark, object URL, …) |
-| `hasBytes` | `bool` | Convenience getter: `bytes != null` |
+| Field        | Type         | Description                                     |
+|--------------|--------------|-------------------------------------------------|
+| `name`       | `String`     | File name (e.g. `report.pdf`)                   |
+| `size`       | `int`        | Size in bytes                                   |
+| `path`       | `String?`    | Local path when available; `null` on Web        |
+| `bytes`      | `Uint8List?` | File contents when `withData: true` or on Web   |
+| `identifier` | `String?`    | Native unique id (URI, bookmark, object URL, …) |
+| `hasBytes`   | `bool`       | Convenience getter: `bytes != null`             |
 
 ### `DirectoryResult`
 
 Result of `pickDirectory`.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `path` | `String` | Display / filesystem path, or tree URI / folder name depending on platform |
-| `name` | `String` | Directory display name |
-| `identifier` | `String?` | Durable native id when available (e.g. iOS bookmark, Android tree URI) |
+| Field        | Type      | Description                                                                |
+|--------------|-----------|----------------------------------------------------------------------------|
+| `path`       | `String`  | Display / filesystem path, or tree URI / folder name depending on platform |
+| `name`       | `String`  | Directory display name                                                     |
+| `identifier` | `String?` | Durable native id when available (e.g. iOS bookmark, Android tree URI)     |
 
 ### `SaveFileResult`
 
 Result of `saveFile`.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `name` | `String` | Saved file name (e.g. download name on Web) |
+| Field  | Type      | Description                                    |
+|--------|-----------|------------------------------------------------|
+| `name` | `String`  | Saved file name (e.g. download name on Web)    |
 | `path` | `String?` | Absolute path on mobile/desktop; `null` on Web |
 
 ### `SaveToGalleryResult`
 
 Result of `saveToGallery`.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `name` | `String` | Final file name |
-| `path` | `String?` | Absolute path on desktop (and Android API 24–28); usually `null` on Android 10+ |
+| Field        | Type      | Description                                                                               |
+|--------------|-----------|-------------------------------------------------------------------------------------------|
+| `name`       | `String`  | Final file name                                                                           |
+| `path`       | `String?` | Absolute path on desktop (and Android API 24–28); usually `null` on Android 10+           |
 | `identifier` | `String?` | Android `content://` URI, iOS/macOS Photos `localIdentifier`, or `file://` URI on desktop |
 
 ### `FileType`
 
 High-level filter for pick dialogs:
 
-| Value | Meaning |
-|-------|---------|
-| `FileType.any` | No type restriction |
-| `FileType.media` | Images + videos (system photo picker on iOS / Android) |
-| `FileType.image` | Images (system photo picker on iOS / Android) |
-| `FileType.video` | Videos (system photo picker on iOS / Android) |
-| `FileType.audio` | Audio |
-| `FileType.custom` | Rely on `allowedExtensions` / `allowedMimeTypes` |
+| Value             | Meaning                                                |
+|-------------------|--------------------------------------------------------|
+| `FileType.any`    | No type restriction                                    |
+| `FileType.media`  | Images + videos (system photo picker on iOS / Android) |
+| `FileType.image`  | Images (system photo picker on iOS / Android)          |
+| `FileType.video`  | Videos (system photo picker on iOS / Android)          |
+| `FileType.audio`  | Audio                                                  |
+| `FileType.custom` | Rely on `allowedExtensions` / `allowedMimeTypes`       |
 
 On iOS / Android, `image` / `video` / `media` without `allowedExtensions` / `allowedMimeTypes` uses the system photo picker (no photo permission required); passing custom filters keeps the document picker. iOS 13 falls back to the document picker.
 
 ### `GalleryMediaType`
 
-| Value | Meaning |
-|-------|---------|
-| `GalleryMediaType.image` | Image |
-| `GalleryMediaType.video` | Video |
+| Value                    | Meaning |
+|--------------------------|---------|
+| `GalleryMediaType.image` | Image   |
+| `GalleryMediaType.video` | Video   |
 
 ### `GalleryPermissionStatus`
 
 Result of `galleryPermissionStatus` / `requestGalleryPermission`. Getters: `isDenied`, `isGranted`, `isRestricted`, `isLimited`, `isPermanentlyDenied`, `canSave`.
 
-| Value | Meaning |
-|-------|---------|
-| `denied` | Not requested yet (PhotoKit `notDetermined`), or denied on Android but the dialog can still be shown |
-| `granted` | Full access to save to the gallery |
-| `restricted` | OS restriction (parental controls). iOS / macOS only |
-| `limited` | Limited Photos Library. iOS 14+; saving still works, custom albums do not |
+| Value               | Meaning                                                                                                  |
+|---------------------|----------------------------------------------------------------------------------------------------------|
+| `denied`            | Not requested yet (PhotoKit `notDetermined`), or denied on Android but the dialog can still be shown     |
+| `granted`           | Full access to save to the gallery                                                                       |
+| `restricted`        | OS restriction (parental controls). iOS / macOS only                                                     |
+| `limited`           | Limited Photos Library. iOS 14+; saving still works, custom albums do not                                |
 | `permanentlyDenied` | PhotoKit `.denied` or Android "Don't ask again"; dialog will not appear again — call `openAppSettings()` |
 
 ## Errors
 
 Hard failures throw `FileOperationsException`:
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `code` | `ErrorCode` | Machine-readable error code |
-| `message` | `String` | Human-readable message |
-| `details` | `Object?` | Optional extra context |
+| Property  | Type        | Description                 |
+|-----------|-------------|-----------------------------|
+| `code`    | `ErrorCode` | Machine-readable error code |
+| `message` | `String`    | Human-readable message      |
+| `details` | `Object?`   | Optional extra context      |
 
 ### `ErrorCode`
 
-| Code | Wire value | Typical meaning |
-|------|------------|-----------------|
-| `cancelled` | `cancelled` | Reserved for cancellation (user cancel normally returns `null`) |
-| `permissionDenied` | `permission_denied` | Permission / access denied |
-| `invalidArgs` | `invalid_args` | Invalid method arguments |
-| `tooManyFiles` | `too_many_files` | Selection exceeded `maxFiles` |
-| `notFound` | `not_found` | File or resource not found |
-| `ioError` | `io_error` | I/O failure while reading/writing |
-| `unsupported` | `unsupported` | Operation not supported on this platform / configuration |
-| `unknown` | `unknown` | Unexpected / unclassified error |
+| Code               | Wire value          | Typical meaning                                                 |
+|--------------------|---------------------|-----------------------------------------------------------------|
+| `cancelled`        | `cancelled`         | Reserved for cancellation (user cancel normally returns `null`) |
+| `permissionDenied` | `permission_denied` | Permission / access denied                                      |
+| `invalidArgs`      | `invalid_args`      | Invalid method arguments                                        |
+| `tooManyFiles`     | `too_many_files`    | Selection exceeded `maxFiles`                                   |
+| `notFound`         | `not_found`         | File or resource not found                                      |
+| `ioError`          | `io_error`          | I/O failure while reading/writing                               |
+| `unsupported`      | `unsupported`       | Operation not supported on this platform / configuration        |
+| `unknown`          | `unknown`           | Unexpected / unclassified error                                 |
 
 ## Links
 

@@ -1,4 +1,6 @@
-# Changelog
+## 1.3.2 
+
+- update android package version
 
 ## 1.3.1
 

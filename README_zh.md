@@ -4,8 +4,6 @@
 
 跨平台 Flutter 插件：支持选择文件与目录、另存为（Save As）、将图片/视频保存到图库，以及使用系统默认应用打开文件。
 
-**仓库地址：** [https://github.com/Matkurban/xue_hua_file_operations](https://github.com/Matkurban/xue_hua_file_operations)
-
 ## 功能特性
 
 - 选择单个文件（`pickFile`）或多个文件（`pickFiles`）
@@ -25,7 +23,7 @@
 
 ```yaml
 dependencies:
-  xue_hua_file_operations: ^1.2.1
+  xue_hua_file_operations: ^lasted
 ```
 
 然后执行：
@@ -36,30 +34,30 @@ flutter pub get
 
 ## 支持的平台
 
-| 平台 | 是否支持 | 说明 |
-|------|----------|------|
-| Android | 是 | Storage Access Framework (SAF) / Activity Result API；`saveToGallery` 使用 MediaStore / 公共 Pictures |
-| iOS | 是（13.0+） | 媒体走 `PHPickerViewController`（iOS 14+），其余走 `UIDocumentPicker`；`saveToGallery` 使用 PhotoKit |
-| macOS | 是 | 原生 `NSOpenPanel` / `NSSavePanel`；`saveToGallery` 使用 PhotoKit |
-| Windows | 是 | 原生文件 / 文件夹对话框；`saveToGallery` 写入 Pictures / Videos |
-| Linux | 是 | 原生文件 / 文件夹对话框；`saveToGallery` 写入 XDG Pictures / Videos |
-| Web | 是 | HTML `<input type="file">` 与 Blob 下载；`saveToGallery` 触发浏览器下载 |
+| 平台      | 是否支持     | 说明                                                                                               |
+|---------|----------|--------------------------------------------------------------------------------------------------|
+| Android | 是        | Storage Access Framework (SAF) / Activity Result API；`saveToGallery` 使用 MediaStore / 公共 Pictures |
+| iOS     | 是（13.0+） | 媒体走 `PHPickerViewController`（iOS 14+），其余走 `UIDocumentPicker`；`saveToGallery` 使用 PhotoKit         |
+| macOS   | 是        | 原生 `NSOpenPanel` / `NSSavePanel`；`saveToGallery` 使用 PhotoKit                                     |
+| Windows | 是        | 原生文件 / 文件夹对话框；`saveToGallery` 写入 Pictures / Videos                                               |
+| Linux   | 是        | 原生文件 / 文件夹对话框；`saveToGallery` 写入 XDG Pictures / Videos                                           |
+| Web     | 是        | HTML `<input type="file">` 与 Blob 下载；`saveToGallery` 触发浏览器下载                                     |
 
 ### `path` 与 `identifier` 行为
 
-| 平台 | `path` | 说明 |
-|------|--------|------|
-| Android / iOS / 桌面 | 通常非空（缓存副本或文件系统路径） | `identifier` 保留原生 URI / URL / bookmark |
-| Web | 始终为 `null` | 始终加载 `bytes`；保存触发下载；打开需要 object URL 形式的 `identifier` |
+| 平台                 | `path`            | 说明                                                   |
+|--------------------|-------------------|------------------------------------------------------|
+| Android / iOS / 桌面 | 通常非空（缓存副本或文件系统路径） | `identifier` 保留原生 URI / URL / bookmark               |
+| Web                | 始终为 `null`        | 始终加载 `bytes`；保存触发下载；打开需要 object URL 形式的 `identifier` |
 
 ### 目录选择
 
-| 平台 | 返回内容 | 说明 |
-|------|----------|------|
-| Android | SAF 树 URI，位于 `path` / `identifier` | 在可能时会申请可持久化读权限 |
-| iOS | 展示用 `path` + 安全作用域 **bookmark**（在 `identifier` 中） | 后续访问 / `openFile` 请优先使用 `identifier`；仅路径不可长期使用 |
-| macOS / Windows / Linux | 真实文件系统路径 | 原生文件夹对话框 |
-| Web | 通过 `webkitdirectory` 得到文件夹名 | 不是真实 FS 路径；能力取决于浏览器 |
+| 平台                      | 返回内容                                              | 说明                                             |
+|-------------------------|---------------------------------------------------|------------------------------------------------|
+| Android                 | SAF 树 URI，位于 `path` / `identifier`                | 在可能时会申请可持久化读权限                                 |
+| iOS                     | 展示用 `path` + 安全作用域 **bookmark**（在 `identifier` 中） | 后续访问 / `openFile` 请优先使用 `identifier`；仅路径不可长期使用 |
+| macOS / Windows / Linux | 真实文件系统路径                                          | 原生文件夹对话框                                       |
+| Web                     | 通过 `webkitdirectory` 得到文件夹名                       | 不是真实 FS 路径；能力取决于浏览器                            |
 
 ## 平台配置与权限
 
@@ -233,13 +231,13 @@ Future<PlatformFile?> pickFile({
 })
 ```
 
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `withData` | `bool` | `false` | 为 `true` 时将文件内容读入 `PlatformFile.bytes`。在 Web 上无论该标志如何都会加载 bytes。 |
-| `dialogTitle` | `String?` | `null` | 原生对话框标题（在支持的平台上，如桌面）。部分平台可能忽略（如 Android SAF、Web）。 |
-| `type` | `FileType` | `FileType.any` | 高级类型过滤：`any`、`media`、`image`、`video`、`audio` 或 `custom`。在 iOS / Android 上，`image` / `video` / `media`（且未传扩展名 / MIME 过滤）会打开系统照片选择器（iOS `PHPickerViewController`，Android Photo Picker），可直接从相册选择。 |
-| `allowedExtensions` | `List<String>?` | `null` | 允许的扩展名（可带或不带前导 `.`），例如 `['pdf', 'txt']`。常与 `FileType.custom` 配合，或作为附加过滤。 |
-| `allowedMimeTypes` | `List<String>?` | `null` | 允许的 MIME 类型，例如 `['application/pdf']`。具体行为取决于平台选择器。 |
+| 参数                  | 类型              | 默认值            | 说明                                                                                                                                                                                             |
+|---------------------|-----------------|----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `withData`          | `bool`          | `false`        | 为 `true` 时将文件内容读入 `PlatformFile.bytes`。在 Web 上无论该标志如何都会加载 bytes。                                                                                                                               |
+| `dialogTitle`       | `String?`       | `null`         | 原生对话框标题（在支持的平台上，如桌面）。部分平台可能忽略（如 Android SAF、Web）。                                                                                                                                              |
+| `type`              | `FileType`      | `FileType.any` | 高级类型过滤：`any`、`media`、`image`、`video`、`audio` 或 `custom`。在 iOS / Android 上，`image` / `video` / `media`（且未传扩展名 / MIME 过滤）会打开系统照片选择器（iOS `PHPickerViewController`，Android Photo Picker），可直接从相册选择。 |
+| `allowedExtensions` | `List<String>?` | `null`         | 允许的扩展名（可带或不带前导 `.`），例如 `['pdf', 'txt']`。常与 `FileType.custom` 配合，或作为附加过滤。                                                                                                                       |
+| `allowedMimeTypes`  | `List<String>?` | `null`         | 允许的 MIME 类型，例如 `['application/pdf']`。具体行为取决于平台选择器。                                                                                                                                             |
 
 **返回值：** `PlatformFile?` — 选中的文件；取消时为 `null`。
 
@@ -258,14 +256,14 @@ Future<List<PlatformFile>?> pickFiles({
 })
 ```
 
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `maxFiles` | `int?` | `null` | 允许选择的最大文件数。`null` 表示不限制。若提供则必须 `>= 1`。若用户选择数量超过 `maxFiles`，抛出带 `ErrorCode.tooManyFiles` 的 `FileOperationsException`。 |
-| `withData` | `bool` | `false` | 同 `pickFile`。 |
-| `dialogTitle` | `String?` | `null` | 同 `pickFile`。 |
-| `type` | `FileType` | `FileType.any` | 同 `pickFile`。 |
-| `allowedExtensions` | `List<String>?` | `null` | 同 `pickFile`。 |
-| `allowedMimeTypes` | `List<String>?` | `null` | 同 `pickFile`。 |
+| 参数                  | 类型              | 默认值            | 说明                                                                                                                   |
+|---------------------|-----------------|----------------|----------------------------------------------------------------------------------------------------------------------|
+| `maxFiles`          | `int?`          | `null`         | 允许选择的最大文件数。`null` 表示不限制。若提供则必须 `>= 1`。若用户选择数量超过 `maxFiles`，抛出带 `ErrorCode.tooManyFiles` 的 `FileOperationsException`。 |
+| `withData`          | `bool`          | `false`        | 同 `pickFile`。                                                                                                        |
+| `dialogTitle`       | `String?`       | `null`         | 同 `pickFile`。                                                                                                        |
+| `type`              | `FileType`      | `FileType.any` | 同 `pickFile`。                                                                                                        |
+| `allowedExtensions` | `List<String>?` | `null`         | 同 `pickFile`。                                                                                                        |
+| `allowedMimeTypes`  | `List<String>?` | `null`         | 同 `pickFile`。                                                                                                        |
 
 **返回值：** `List<PlatformFile>?` — 选中的文件列表；取消时为 `null`。
 
@@ -279,8 +277,8 @@ Future<List<PlatformFile>?> pickFiles({
 Future<DirectoryResult?> pickDirectory({String? dialogTitle})
 ```
 
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
+| 参数            | 类型        | 默认值    | 说明                   |
+|---------------|-----------|--------|----------------------|
 | `dialogTitle` | `String?` | `null` | 原生文件夹对话框标题（在支持的平台上）。 |
 
 **返回值：** `DirectoryResult?` — 目录信息；取消时为 `null`。
@@ -301,13 +299,13 @@ Future<SaveFileResult?> saveFile({
 })
 ```
 
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `fileName` | `String` | *（必填）* | 保存对话框中的建议文件名；Web 上为下载文件名。 |
-| `bytes` | `Uint8List?` | `null` | 要写入的文件内容。Web 上必填。其他平台需提供 `bytes` 和/或 `sourcePath`。 |
-| `sourcePath` | `String?` | `null` | 要复制到所选目标的现有文件路径。Web 不支持。 |
-| `allowedExtensions` | `List<String>?` | `null` | 可选的扩展名过滤 / 提示（在支持的平台上）。 |
-| `dialogTitle` | `String?` | `null` | 原生保存对话框标题（在支持的平台上）。 |
+| 参数                  | 类型              | 默认值    | 说明                                                 |
+|---------------------|-----------------|--------|----------------------------------------------------|
+| `fileName`          | `String`        | *（必填）* | 保存对话框中的建议文件名；Web 上为下载文件名。                          |
+| `bytes`             | `Uint8List?`    | `null` | 要写入的文件内容。Web 上必填。其他平台需提供 `bytes` 和/或 `sourcePath`。 |
+| `sourcePath`        | `String?`       | `null` | 要复制到所选目标的现有文件路径。Web 不支持。                           |
+| `allowedExtensions` | `List<String>?` | `null` | 可选的扩展名过滤 / 提示（在支持的平台上）。                            |
+| `dialogTitle`       | `String?`       | `null` | 原生保存对话框标题（在支持的平台上）。                                |
 
 **返回值：** `SaveFileResult?` — 保存结果；取消时为 `null`。
 
@@ -330,13 +328,13 @@ Future<SaveToGalleryResult> saveToGallery({
 })
 ```
 
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `fileName` | `String` | *（必填）* | 含扩展名的显示文件名（用于 MIME / 类型推断）。 |
-| `bytes` | `Uint8List?` | `null` | 要写入的内容。需提供 `bytes` 和/或 `sourcePath`。 |
-| `sourcePath` | `String?` | `null` | 已有图片/视频的路径（Android 也可为 `content://` URI）。 |
-| `type` | `GalleryMediaType?` | 自动推断 | `image` 或 `video`。未传时从 `fileName` / `sourcePath` 推断。 |
-| `albumName` | `String?` | `null` | 可选相册 / 子目录。iOS/macOS 自定义相册需要完整相册权限。 |
+| 参数           | 类型                  | 默认值    | 说明                                                   |
+|--------------|---------------------|--------|------------------------------------------------------|
+| `fileName`   | `String`            | *（必填）* | 含扩展名的显示文件名（用于 MIME / 类型推断）。                          |
+| `bytes`      | `Uint8List?`        | `null` | 要写入的内容。需提供 `bytes` 和/或 `sourcePath`。                 |
+| `sourcePath` | `String?`           | `null` | 已有图片/视频的路径（Android 也可为 `content://` URI）。            |
+| `type`       | `GalleryMediaType?` | 自动推断   | `image` 或 `video`。未传时从 `fileName` / `sourcePath` 推断。 |
+| `albumName`  | `String?`           | `null` | 可选相册 / 子目录。iOS/macOS 自定义相册需要完整相册权限。                  |
 
 **返回值：** `SaveToGalleryResult` — `name`、可选文件系统 `path`，以及原生 `identifier`。
 
@@ -358,30 +356,30 @@ Future<GalleryPermissionStatus> galleryPermissionStatus({bool forAlbum = false})
 Future<GalleryPermissionStatus> requestGalleryPermission({bool forAlbum = false});
 ```
 
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
+| 参数         | 类型     | 默认值     | 说明                                                 |
+|------------|--------|---------|----------------------------------------------------|
 | `forAlbum` | `bool` | `false` | 为 `true` 时申请 `saveToGallery(albumName:)` 所需的读相册权限。 |
 
 `galleryPermissionStatus` 不弹窗。`requestGalleryPermission` **仅在** PhotoKit 状态仍为 `notDetermined` 时弹出系统框（[WWDC20 10641](https://developer.apple.com/videos/play/wwdc2020/10641/)、[requestAuthorization(for:handler:)](https://developer.apple.com/documentation/photos/phphotolibrary/requestauthorization(for:handler:))）。
 
-| PhotoKit `PHAuthorizationStatus` | 插件状态 | 含义 |
-|----------------------------------|----------|------|
-| `notDetermined` | `denied` | 尚未询问，请求时仍可弹框 |
-| `authorized` | `granted` | 完整照片权限 |
-| `limited` | `limited` | 有限相册（iOS 14+）；仍可保存，不能用自定义相册 |
-| `restricted` | `restricted` | 系统限制（家长控制 / MDM） |
-| `denied` | `permanentlyDenied` | 用户拒绝；Apple 不会再弹框 |
+| PhotoKit `PHAuthorizationStatus` | 插件状态                | 含义                          |
+|----------------------------------|---------------------|-----------------------------|
+| `notDetermined`                  | `denied`            | 尚未询问，请求时仍可弹框                |
+| `authorized`                     | `granted`           | 完整照片权限                      |
+| `limited`                        | `limited`           | 有限相册（iOS 14+）；仍可保存，不能用自定义相册 |
+| `restricted`                     | `restricted`        | 系统限制（家长控制 / MDM）            |
+| `denied`                         | `permanentlyDenied` | 用户拒绝；Apple 不会再弹框            |
 
 无自定义相册时，`status.isGranted || status.isLimited` 即可保存。自定义相册需要 `status.isGranted`。若 `status.isPermanentlyDenied` 或 `status.isRestricted`，在用户点击后再调用 `openAppSettings()` — 不要在 `requestGalleryPermission` 内部自动跳转设置。
 
-| 平台 | 典型行为 |
-|------|----------|
-| iOS | PhotoKit `addOnly`，`forAlbum` 时为 `readWrite` |
-| macOS | 始终 PhotoKit `readWrite`（忽略 `forAlbum`；系统设置「照片」没有 add-only 项） |
-| Android 24–28 | `WRITE_EXTERNAL_STORAGE` |
-| Android 29+ | 始终 `granted`（不申请 `READ_MEDIA_*`） |
-| Windows / Linux | 始终 `granted` |
-| Web | 始终 `granted` |
+| 平台              | 典型行为                                                         |
+|-----------------|--------------------------------------------------------------|
+| iOS             | PhotoKit `addOnly`，`forAlbum` 时为 `readWrite`                 |
+| macOS           | 始终 PhotoKit `readWrite`（忽略 `forAlbum`；系统设置「照片」没有 add-only 项） |
+| Android 24–28   | `WRITE_EXTERNAL_STORAGE`                                     |
+| Android 29+     | 始终 `granted`（不申请 `READ_MEDIA_*`）                             |
+| Windows / Linux | 始终 `granted`                                                 |
+| Web             | 始终 `granted`                                                 |
 
 ### `openAppSettings`
 
@@ -391,14 +389,14 @@ Future<GalleryPermissionStatus> requestGalleryPermission({bool forAlbum = false}
 Future<void> openAppSettings()
 ```
 
-| 平台 | 行为 |
-|------|------|
-| iOS | 应用设置页（`UIApplication.openSettingsURLString`） |
-| macOS | 系统设置 → 隐私与安全性 → 照片 |
-| Android | 应用详情设置 |
-| Windows | Windows 设置的隐私 / 应用页 |
-| Linux | 空操作（没有应用级照片开关） |
-| Web | 空操作 |
+| 平台      | 行为                                           |
+|---------|----------------------------------------------|
+| iOS     | 应用设置页（`UIApplication.openSettingsURLString`） |
+| macOS   | 系统设置 → 隐私与安全性 → 照片                           |
+| Android | 应用详情设置                                       |
+| Windows | Windows 设置的隐私 / 应用页                          |
+| Linux   | 空操作（没有应用级照片开关）                               |
+| Web     | 空操作                                          |
 
 ### `openFile`
 
@@ -408,9 +406,9 @@ Future<void> openAppSettings()
 Future<void> openFile({String? path, String? identifier})
 ```
 
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `path` | `String?` | `null` | 要打开的文件系统路径（或平台可访问路径）。 |
+| 参数           | 类型        | 默认值    | 说明                                                          |
+|--------------|-----------|--------|-------------------------------------------------------------|
+| `path`       | `String?` | `null` | 要打开的文件系统路径（或平台可访问路径）。                                       |
 | `identifier` | `String?` | `null` | 原生标识：Android content URI、iOS bookmark/URL、Web object URL 等。 |
 
 `path` 与 `identifier` 至少提供一个非空值。
@@ -426,63 +424,63 @@ Future<void> openFile({String? path, String? identifier})
 
 表示由插件选择或产生的文件。
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `name` | `String` | 文件名（如 `report.pdf`） |
-| `size` | `int` | 大小（字节） |
-| `path` | `String?` | 可用时为本地路径；Web 上为 `null` |
-| `bytes` | `Uint8List?` | 在 `withData: true` 或 Web 上为文件内容 |
-| `identifier` | `String?` | 原生唯一标识（URI、bookmark、object URL 等） |
-| `hasBytes` | `bool` | 便捷属性：`bytes != null` |
+| 字段           | 类型           | 说明                                |
+|--------------|--------------|-----------------------------------|
+| `name`       | `String`     | 文件名（如 `report.pdf`）               |
+| `size`       | `int`        | 大小（字节）                            |
+| `path`       | `String?`    | 可用时为本地路径；Web 上为 `null`            |
+| `bytes`      | `Uint8List?` | 在 `withData: true` 或 Web 上为文件内容   |
+| `identifier` | `String?`    | 原生唯一标识（URI、bookmark、object URL 等） |
+| `hasBytes`   | `bool`       | 便捷属性：`bytes != null`              |
 
 ### `DirectoryResult`
 
 `pickDirectory` 的返回结果。
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `path` | `String` | 展示 / 文件系统路径，或树 URI / 文件夹名（视平台而定） |
-| `name` | `String` | 目录显示名称 |
+| 字段           | 类型        | 说明                                       |
+|--------------|-----------|------------------------------------------|
+| `path`       | `String`  | 展示 / 文件系统路径，或树 URI / 文件夹名（视平台而定）         |
+| `name`       | `String`  | 目录显示名称                                   |
 | `identifier` | `String?` | 可用时的持久原生标识（如 iOS bookmark、Android 树 URI） |
 
 ### `SaveFileResult`
 
 `saveFile` 的返回结果。
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `name` | `String` | 已保存文件名（Web 上为下载名） |
+| 字段     | 类型        | 说明                           |
+|--------|-----------|------------------------------|
+| `name` | `String`  | 已保存文件名（Web 上为下载名）            |
 | `path` | `String?` | 移动端 / 桌面端为绝对路径；Web 上为 `null` |
 
 ### `SaveToGalleryResult`
 
 `saveToGallery` 的返回结果。
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `name` | `String` | 最终文件名 |
-| `path` | `String?` | 桌面端（以及 Android API 24–28）为绝对路径；Android 10+ 通常为 `null` |
+| 字段           | 类型        | 说明                                                                            |
+|--------------|-----------|-------------------------------------------------------------------------------|
+| `name`       | `String`  | 最终文件名                                                                         |
+| `path`       | `String?` | 桌面端（以及 Android API 24–28）为绝对路径；Android 10+ 通常为 `null`                         |
 | `identifier` | `String?` | Android `content://` URI、iOS/macOS Photos `localIdentifier`，或桌面 `file://` URI |
 
 ### `FileType`
 
 选择对话框的高级类型过滤：
 
-| 值 | 含义 |
-|----|------|
-| `FileType.any` | 不限制类型 |
-| `FileType.media` | 图片 + 视频（iOS / Android 打开系统照片选择器） |
-| `FileType.image` | 图片（iOS / Android 打开系统照片选择器） |
-| `FileType.video` | 视频（iOS / Android 打开系统照片选择器） |
-| `FileType.audio` | 音频 |
+| 值                 | 含义                                          |
+|-------------------|---------------------------------------------|
+| `FileType.any`    | 不限制类型                                       |
+| `FileType.media`  | 图片 + 视频（iOS / Android 打开系统照片选择器）            |
+| `FileType.image`  | 图片（iOS / Android 打开系统照片选择器）                 |
+| `FileType.video`  | 视频（iOS / Android 打开系统照片选择器）                 |
+| `FileType.audio`  | 音频                                          |
 | `FileType.custom` | 依赖 `allowedExtensions` / `allowedMimeTypes` |
 
 在 iOS / Android 上，`image` / `video` / `media` 且未传 `allowedExtensions` / `allowedMimeTypes` 时使用系统照片选择器（无需相册权限）；传入自定义过滤时仍使用文档选择器。iOS 13 回退到文档选择器。
 
 ### `GalleryMediaType`
 
-| 值 | 含义 |
-|----|------|
+| 值                        | 含义 |
+|--------------------------|----|
 | `GalleryMediaType.image` | 图片 |
 | `GalleryMediaType.video` | 视频 |
 
@@ -490,36 +488,36 @@ Future<void> openFile({String? path, String? identifier})
 
 `galleryPermissionStatus` / `requestGalleryPermission` 的返回值。Getter：`isDenied`、`isGranted`、`isRestricted`、`isLimited`、`isPermanentlyDenied`、`canSave`。
 
-| 值 | 含义 |
-|----|------|
-| `denied` | 尚未申请（PhotoKit `notDetermined`），或 Android 上拒绝但仍可再弹窗 |
-| `granted` | 已授权写入图库 |
-| `restricted` | 系统限制（家长控制等）。仅 iOS / macOS |
-| `limited` | 有限相册。iOS 14+；仍可保存，不能使用自定义相册 |
+| 值                   | 含义                                                               |
+|---------------------|------------------------------------------------------------------|
+| `denied`            | 尚未申请（PhotoKit `notDetermined`），或 Android 上拒绝但仍可再弹窗               |
+| `granted`           | 已授权写入图库                                                          |
+| `restricted`        | 系统限制（家长控制等）。仅 iOS / macOS                                        |
+| `limited`           | 有限相册。iOS 14+；仍可保存，不能使用自定义相册                                      |
 | `permanentlyDenied` | PhotoKit `.denied` 或 Android「不再询问」；无法再弹窗，请调用 `openAppSettings()` |
 
 ## 错误处理
 
 硬性失败会抛出 `FileOperationsException`：
 
-| 属性 | 类型 | 说明 |
-|------|------|------|
-| `code` | `ErrorCode` | 机器可读错误码 |
-| `message` | `String` | 可读错误信息 |
-| `details` | `Object?` | 可选附加上下文 |
+| 属性        | 类型          | 说明      |
+|-----------|-------------|---------|
+| `code`    | `ErrorCode` | 机器可读错误码 |
+| `message` | `String`    | 可读错误信息  |
+| `details` | `Object?`   | 可选附加上下文 |
 
 ### `ErrorCode`
 
-| 枚举值 | 线传值 | 典型含义 |
-|--------|--------|----------|
-| `cancelled` | `cancelled` | 预留取消码（用户取消通常返回 `null`） |
-| `permissionDenied` | `permission_denied` | 权限 / 访问被拒绝 |
-| `invalidArgs` | `invalid_args` | 方法参数无效 |
-| `tooManyFiles` | `too_many_files` | 选择数量超过 `maxFiles` |
-| `notFound` | `not_found` | 文件或资源未找到 |
-| `ioError` | `io_error` | 读写过程中的 I/O 失败 |
-| `unsupported` | `unsupported` | 当前平台 / 配置不支持该操作 |
-| `unknown` | `unknown` | 未预期 / 未分类错误 |
+| 枚举值                | 线传值                 | 典型含义                   |
+|--------------------|---------------------|------------------------|
+| `cancelled`        | `cancelled`         | 预留取消码（用户取消通常返回 `null`） |
+| `permissionDenied` | `permission_denied` | 权限 / 访问被拒绝             |
+| `invalidArgs`      | `invalid_args`      | 方法参数无效                 |
+| `tooManyFiles`     | `too_many_files`    | 选择数量超过 `maxFiles`      |
+| `notFound`         | `not_found`         | 文件或资源未找到               |
+| `ioError`          | `io_error`          | 读写过程中的 I/O 失败          |
+| `unsupported`      | `unsupported`       | 当前平台 / 配置不支持该操作        |
+| `unknown`          | `unknown`           | 未预期 / 未分类错误            |
 
 ## 相关链接
 
