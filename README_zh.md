@@ -16,6 +16,7 @@
 - 图库权限被永久拒绝后打开系统设置（`openAppSettings`）
 - 使用系统默认处理程序打开文件（`openFile`）
 - 统一的 `PlatformFile` 模型，以及类型化异常 `FileOperationsException` / `ErrorCode`
+- 随包装发面向 AI 编程助手的 Package Skills（`dart run skills@ get`）
 
 ## 安装
 
@@ -23,7 +24,7 @@
 
 ```yaml
 dependencies:
-  xue_hua_file_operations: ^lasted
+  xue_hua_file_operations: ^1.3.3
 ```
 
 然后执行：
@@ -31,6 +32,28 @@ dependencies:
 ```bash
 flutter pub get
 ```
+
+## 软件包 Skills
+
+本包随附 Agent Skills，供 AI 编程助手按公开 API 正确生成代码。在**你的工程**（而不是本插件仓库）添加依赖后执行：
+
+```bash
+dart run skills@ get
+# 或安装发现的全部 skill
+dart run skills@ get --all
+```
+
+随包装发的 skill：
+
+| Skill | 适用场景 |
+| --- | --- |
+| `xue-hua-file-operations-setup` | 添加依赖、平台权限、`FlutterFragmentActivity`、Info.plist、entitlements |
+| `xue-hua-file-operations-pick` | `pickFile` / `pickFiles` / `pickDirectory` |
+| `xue-hua-file-operations-save` | `saveFile`、`saveToGallery`、图库权限 API |
+| `xue-hua-file-operations-open` | `openFile` |
+| `xue-hua-file-operations-errors` | `FileOperationsException` / `ErrorCode` |
+
+说明见 [Ship skills with packages](https://dart.dev/tools/pub/package-skills)。
 
 ## 支持的平台
 
@@ -523,4 +546,5 @@ Future<void> openFile({String? path, String? identifier})
 
 - GitHub：[https://github.com/Matkurban/xue_hua_file_operations](https://github.com/Matkurban/xue_hua_file_operations)
 - 更新日志：[CHANGELOG.md](CHANGELOG.md)
+- 软件包 Skills：[Ship skills with packages](https://dart.dev/tools/pub/package-skills)
 - 许可证：[LICENSE](LICENSE)

@@ -1,3 +1,8 @@
+## 1.3.3
+
+* Ship Package Skills under `skills/` for AI agents (`dart run skills@ get`).
+* Fix English and Chinese README: replace `^lasted` with `^1.3.3`, add a Package skills section, and translate the iOS minimum-version note in the English README.
+
 ## 1.3.2 
 
 - update android package version

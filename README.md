@@ -16,6 +16,7 @@ Cross-platform Flutter plugin for picking files and directories, saving files (s
 - Open system settings when gallery access is permanently denied (`openAppSettings`)
 - Open a file with the system handler (`openFile`)
 - Unified `PlatformFile` model and typed `FileOperationsException` / `ErrorCode`
+- Package Skills for AI agents (`dart run skills@ get`)
 
 ## Installation
 
@@ -23,7 +24,7 @@ Add the dependency to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  xue_hua_file_operations: ^lasted
+  xue_hua_file_operations: ^1.3.3
 ```
 
 Then run:
@@ -31,6 +32,28 @@ Then run:
 ```bash
 flutter pub get
 ```
+
+## Package skills
+
+This package ships Agent Skills that teach AI coding agents how to use the public API. After adding the dependency, run the following in **your** project (not inside this plugin repo):
+
+```bash
+dart run skills@ get
+# or install every discovered skill
+dart run skills@ get --all
+```
+
+Skills included:
+
+| Skill | Use when |
+| --- | --- |
+| `xue-hua-file-operations-setup` | Adding the package, platform permissions, `FlutterFragmentActivity`, Info.plist, entitlements |
+| `xue-hua-file-operations-pick` | `pickFile` / `pickFiles` / `pickDirectory` |
+| `xue-hua-file-operations-save` | `saveFile`, `saveToGallery`, gallery permission APIs |
+| `xue-hua-file-operations-open` | `openFile` |
+| `xue-hua-file-operations-errors` | `FileOperationsException` / `ErrorCode` |
+
+See [Ship skills with packages](https://dart.dev/tools/pub/package-skills).
 
 ## Supported platforms
 
@@ -85,7 +108,7 @@ class MainActivity : FlutterFragmentActivity()
 
 ### iOS
 
-最低版本为 **iOS 13.0**（与 Flutter 默认 `IPHONEOS_DEPLOYMENT_TARGET` 一致）。宿主应用无需为了使用本插件而升到 14.0。
+Minimum version is **iOS 13.0** (same as Flutter’s default `IPHONEOS_DEPLOYMENT_TARGET`). Host apps do not need to raise it to 14.0 to use this plugin.
 
 **Permissions for document pick / save / open:** No extra Info.plist privacy keys (such as photo library usage descriptions) are required for those document-picker APIs.
 
@@ -523,4 +546,5 @@ Hard failures throw `FileOperationsException`:
 
 - GitHub: [https://github.com/Matkurban/xue_hua_file_operations](https://github.com/Matkurban/xue_hua_file_operations)
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
+- Package skills: [Ship skills with packages](https://dart.dev/tools/pub/package-skills)
 - License: [LICENSE](LICENSE)

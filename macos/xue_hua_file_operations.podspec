@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'xue_hua_file_operations'
-  s.version          = '1.3.0'
+  s.version          = '1.3.3'
   s.summary          = 'Cross-platform Flutter plugin for file operations.'
   s.description      = <<-DESC
 Cross-platform Flutter plugin for picking files/directories, save-as, saving
