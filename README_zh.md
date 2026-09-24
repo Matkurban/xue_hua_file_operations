@@ -2,6 +2,8 @@
 
 [English](README.md) | 中文
 
+**在线访问：** [https://matkurban.github.io/xue_hua_file_operations/](https://matkurban.github.io/xue_hua_file_operations/)
+
 跨平台 Flutter 插件：支持选择文件与目录、另存为（Save As）、将图片/视频保存到图库，以及使用系统默认应用打开文件。
 
 ## 功能特性

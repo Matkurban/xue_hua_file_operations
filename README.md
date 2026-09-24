@@ -2,6 +2,8 @@
 
 English | [中文](README_zh.md)
 
+**Live demo:** [https://matkurban.github.io/xue_hua_file_operations/](https://matkurban.github.io/xue_hua_file_operations/)
+
 Cross-platform Flutter plugin for picking files and directories, saving files (save-as), saving images/videos to the gallery, and opening files with the system default application.
 
 ## Features
