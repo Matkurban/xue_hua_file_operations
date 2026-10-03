@@ -6,7 +6,8 @@ plugins {
 
 android {
     namespace = "com.kurban.xue_hua_file_operations_example"
-    compileSdk = flutter.compileSdkVersion
+//    compileSdk = flutter.compileSdkVersion
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

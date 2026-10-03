@@ -26,7 +26,7 @@ Add the dependency to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  xue_hua_file_operations: ^1.3.3
+  xue_hua_file_operations: ^1.4.0
 ```
 
 Then run:
@@ -47,13 +47,13 @@ dart run skills@ get --all
 
 Skills included:
 
-| Skill | Use when |
-| --- | --- |
-| `xue-hua-file-operations-setup` | Adding the package, platform permissions, `FlutterFragmentActivity`, Info.plist, entitlements |
-| `xue-hua-file-operations-pick` | `pickFile` / `pickFiles` / `pickDirectory` |
-| `xue-hua-file-operations-save` | `saveFile`, `saveToGallery`, gallery permission APIs |
-| `xue-hua-file-operations-open` | `openFile` |
-| `xue-hua-file-operations-errors` | `FileOperationsException` / `ErrorCode` |
+| Skill                            | Use when                                                                                      |
+|----------------------------------|-----------------------------------------------------------------------------------------------|
+| `xue-hua-file-operations-setup`  | Adding the package, platform permissions, `FlutterFragmentActivity`, Info.plist, entitlements |
+| `xue-hua-file-operations-pick`   | `pickFile` / `pickFiles` / `pickDirectory`                                                    |
+| `xue-hua-file-operations-save`   | `saveFile`, `saveToGallery`, gallery permission APIs                                          |
+| `xue-hua-file-operations-open`   | `openFile`                                                                                    |
+| `xue-hua-file-operations-errors` | `FileOperationsException` / `ErrorCode`                                                       |
 
 See [Ship skills with packages](https://dart.dev/tools/pub/package-skills).
 

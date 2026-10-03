@@ -2,14 +2,14 @@ group = "com.kurban.xue_hua_file_operations"
 version = "1.0.0"
 
 buildscript {
-    val kotlinVersion = "2.3.20"
+    val kotlinVersion = "2.4.0"
     repositories {
         google()
         mavenCentral()
     }
 
     dependencies {
-        classpath("com.android.tools.build:gradle:8.13.2")
+        classpath("com.android.tools.build:gradle:9.1.0")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
     }
 }
@@ -28,7 +28,7 @@ plugins {
 android {
     namespace = "com.kurban.xue_hua_file_operations"
 
-    compileSdk = 36
+    compileSdk = 37
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -72,8 +72,8 @@ kotlin {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.18.0")
+    implementation("androidx.core:core-ktx:1.19.1")
     implementation("androidx.activity:activity-ktx:1.13.0")
     testImplementation("org.jetbrains.kotlin:kotlin-test")
-    testImplementation("org.mockito:mockito-core:5.23.0")
+    testImplementation("org.mockito:mockito-core:5.24.0")
 }

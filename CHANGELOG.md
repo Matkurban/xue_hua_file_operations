@@ -1,3 +1,9 @@
+## 1.4.0
+
+- update `com.android.tools.build:gradle` to `9.1.0` version
+- this version build need `compileSdk` = `37`
+- update example android project version
+
 ## 1.3.3
 
 * Ship Package Skills under `skills/` for AI agents (`dart run skills@ get`).
