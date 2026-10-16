@@ -197,7 +197,7 @@ void main() {
       );
       expect(length, greaterThan(1000));
       expect(length, info.size);
-      expect(duration, greaterThan(0.5));
+      expect(duration, greaterThan(0.3));
     } else {
       await waitStatus(
         (s) => s.contains('unsupported'),

@@ -265,7 +265,7 @@ class CaptureSession {
     gst_element_send_event(pipeline_, gst_event_new_eos());
     GstBus* bus = gst_element_get_bus(pipeline_);
     GstMessage* message = gst_bus_timed_pop_filtered(
-        bus, 10 * GST_SECOND,
+        bus, 30 * GST_SECOND,
         static_cast<GstMessageType>(GST_MESSAGE_EOS | GST_MESSAGE_ERROR));
     bool ok = message != nullptr && GST_MESSAGE_TYPE(message) == GST_MESSAGE_EOS;
     if (message != nullptr) gst_message_unref(message);
