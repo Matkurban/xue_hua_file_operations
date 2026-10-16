@@ -2,10 +2,12 @@ import 'dart:typed_data';
 
 import 'src/errors/error_code.dart';
 import 'src/errors/file_operations_exception.dart';
+import 'src/models/camera_facing.dart';
 import 'src/models/directory_result.dart';
 import 'src/models/file_type.dart';
 import 'src/models/gallery_media_type.dart';
 import 'src/models/gallery_permission_status.dart';
+import 'src/models/lost_capture_result.dart';
 import 'src/models/platform_file.dart';
 import 'src/models/save_file_result.dart';
 import 'src/models/save_to_gallery_result.dart';
@@ -13,10 +15,12 @@ import 'xue_hua_file_operations_platform_interface.dart';
 
 export 'src/errors/error_code.dart';
 export 'src/errors/file_operations_exception.dart';
+export 'src/models/camera_facing.dart';
 export 'src/models/directory_result.dart';
 export 'src/models/file_type.dart';
 export 'src/models/gallery_media_type.dart';
 export 'src/models/gallery_permission_status.dart';
+export 'src/models/lost_capture_result.dart';
 export 'src/models/platform_file.dart';
 export 'src/models/save_file_result.dart';
 export 'src/models/save_to_gallery_result.dart';
@@ -74,6 +78,96 @@ class XueHuaFileOperations {
       allowedExtensions: allowedExtensions,
       allowedMimeTypes: allowedMimeTypes,
     );
+  }
+
+  /// Take a photo with the system camera. Returns `null` if the user cancels.
+  ///
+  /// [preferredCamera] is a hint for the front / rear camera. [maxWidth] /
+  /// [maxHeight] downscale the photo (keeping its aspect ratio) so it fits
+  /// inside the given size; [imageQuality] (0-100) sets the JPEG compression.
+  /// Without any of them the original capture is returned untouched.
+  ///
+  /// Android needs the host Activity to extend `FlutterFragmentActivity` and
+  /// asks for the camera permission when it is declared in the manifest; a
+  /// refusal throws [FileOperationsException] with
+  /// [ErrorCode.permissionDenied]. A device without a camera app throws
+  /// [ErrorCode.unsupported]. On iOS the camera needs
+  /// `NSCameraUsageDescription`. On Web it opens the browser capture UI
+  /// (mobile browsers only; desktop browsers show a file chooser).
+  ///
+  /// Linux, macOS and Windows have no camera capture and throw
+  /// [ErrorCode.unsupported].
+  Future<PlatformFile?> capturePhoto({
+    CameraFacing preferredCamera = CameraFacing.rear,
+    double? maxWidth,
+    double? maxHeight,
+    int? imageQuality,
+    bool withData = false,
+  }) {
+    if (maxWidth != null && maxWidth < 0) {
+      throw FileOperationsException(
+        ErrorCode.invalidArgs,
+        message: 'maxWidth cannot be negative',
+        details: {'maxWidth': maxWidth},
+      );
+    }
+    if (maxHeight != null && maxHeight < 0) {
+      throw FileOperationsException(
+        ErrorCode.invalidArgs,
+        message: 'maxHeight cannot be negative',
+        details: {'maxHeight': maxHeight},
+      );
+    }
+    if (imageQuality != null && (imageQuality < 0 || imageQuality > 100)) {
+      throw FileOperationsException(
+        ErrorCode.invalidArgs,
+        message: 'imageQuality must be between 0 and 100',
+        details: {'imageQuality': imageQuality},
+      );
+    }
+    return _platform.capturePhoto(
+      preferredCamera: preferredCamera,
+      maxWidth: maxWidth,
+      maxHeight: maxHeight,
+      imageQuality: imageQuality,
+      withData: withData,
+    );
+  }
+
+  /// Record a video with the system camera. Returns `null` if the user
+  /// cancels.
+  ///
+  /// [maxDuration] caps the recording length (best effort: some Android
+  /// camera apps ignore it and browsers cannot enforce it).
+  /// [preferredCamera] is a hint for the front / rear camera. Permission and
+  /// platform notes are the same as for [capturePhoto]; iOS additionally
+  /// needs `NSMicrophoneUsageDescription`.
+  Future<PlatformFile?> captureVideo({
+    CameraFacing preferredCamera = CameraFacing.rear,
+    Duration? maxDuration,
+    bool withData = false,
+  }) {
+    if (maxDuration != null && maxDuration.isNegative) {
+      throw FileOperationsException(
+        ErrorCode.invalidArgs,
+        message: 'maxDuration cannot be negative',
+        details: {'maxDuration': maxDuration.inSeconds},
+      );
+    }
+    return _platform.captureVideo(
+      preferredCamera: preferredCamera,
+      maxDuration: maxDuration,
+      withData: withData,
+    );
+  }
+
+  /// Recover a capture lost because Android destroyed the host Activity while
+  /// the camera app was open.
+  ///
+  /// Call once on startup. Always returns [LostCaptureResult.empty] on
+  /// platforms other than Android.
+  Future<LostCaptureResult> retrieveLostCapture() {
+    return _platform.retrieveLostCapture();
   }
 
   /// Pick a directory. Returns `null` if the user cancels.

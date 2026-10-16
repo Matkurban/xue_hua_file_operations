@@ -26,6 +26,13 @@ G_DEFINE_TYPE(XueHuaFileOperationsPlugin, xue_hua_file_operations_plugin,
 
 gboolean xue_hua_file_operations_plugin_is_supported(void) { return TRUE; }
 
+// Desktop Linux has no system camera capture UI, so report it with the shared
+// `unsupported` code.
+FlMethodResponse* xue_hua_file_operations_plugin_capture_unsupported(void) {
+  return FL_METHOD_RESPONSE(fl_method_error_response_new(
+      "unsupported", "Camera capture is not supported on Linux", nullptr));
+}
+
 static GtkWindow* get_window(XueHuaFileOperationsPlugin* self) {
   FlView* view = fl_plugin_registrar_get_view(self->registrar);
   if (view == nullptr) {
@@ -534,6 +541,11 @@ static void xue_hua_file_operations_plugin_handle_method_call(
         fl_method_success_response_new(fl_value_new_string("granted")));
   } else if (strcmp(method, "openFile") == 0) {
     response = open_file(self, args);
+  } else if (strcmp(method, "capturePhoto") == 0 ||
+             strcmp(method, "captureVideo") == 0) {
+    response = xue_hua_file_operations_plugin_capture_unsupported();
+  } else if (strcmp(method, "retrieveLostCapture") == 0) {
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
   } else if (strcmp(method, "openAppSettings") == 0) {
     response = FL_METHOD_RESPONSE(
         fl_method_success_response_new(fl_value_new_bool(TRUE)));

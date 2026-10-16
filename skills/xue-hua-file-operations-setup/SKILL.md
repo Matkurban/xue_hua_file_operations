@@ -15,6 +15,7 @@ description: >-
 * Do not use `XueHuaFileOperationsPlatform`, `MethodChannelXueHuaFileOperations`, or `XueHuaFileOperationsWeb` from app code.
 * On Android, make the host `Activity` extend `FlutterFragmentActivity`.
 * For pick / save-as / open on Android, do not add dangerous storage or `READ_MEDIA_*` permissions.
+* For `capturePhoto` / `captureVideo`: Android needs `FlutterFragmentActivity` (and optionally `android.permission.CAMERA` in the manifest); iOS needs `NSCameraUsageDescription` (+ `NSMicrophoneUsageDescription` for video); Linux / macOS / Windows throw `ErrorCode.unsupported`.
 * For `saveToGallery` on iOS, add `NSPhotoLibraryAddUsageDescription`. Add `NSPhotoLibraryUsageDescription` when using `albumName`.
 * For sandboxed macOS, add `com.apple.security.files.user-selected.read-write`. For Photos, also add `com.apple.security.personal-information.photos-library` and the same Info.plist keys as iOS.
 * Treat Web `path` as always `null`. Load `bytes` from picks. Require `bytes` for save APIs. Open files with an object-URL `identifier`.
@@ -42,6 +43,7 @@ class MainActivity : FlutterFragmentActivity()
 
 * Full platform checklist, path/identifier table, and plist/entitlement snippets: [references/platform-setup.md](references/platform-setup.md)
 * Pick APIs: skill `xue-hua-file-operations-pick`
+* Camera capture APIs: skill `xue-hua-file-operations-capture`
 * Save / gallery APIs: skill `xue-hua-file-operations-save`
 * Open API: skill `xue-hua-file-operations-open`
 * Exceptions: skill `xue-hua-file-operations-errors`

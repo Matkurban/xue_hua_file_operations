@@ -11,6 +11,8 @@ Cross-platform Flutter plugin for picking files and directories, saving files (s
 - Pick a single file (`pickFile`) or multiple files (`pickFiles`)
 - Filter by high-level `FileType`, file extensions, and/or MIME types
 - Optional `maxFiles` limit for multi-select (validated after selection)
+- Capture a photo (`capturePhoto`) or record a video (`captureVideo`) with the system camera, with front/rear preference, photo size/quality and video duration limits
+- Recover a capture lost to Android Activity recreation (`retrieveLostCapture`)
 - Pick a directory (`pickDirectory`)
 - Save-as dialog (`saveFile`) from bytes or by copying a source path
 - Save an image or video to the system gallery (`saveToGallery`)
@@ -26,7 +28,7 @@ Add the dependency to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  xue_hua_file_operations: ^1.4.0
+  xue_hua_file_operations: ^1.5.0
 ```
 
 Then run:
@@ -98,6 +100,8 @@ See [Ship skills with packages](https://dart.dev/tools/pub/package-skills).
 
 Do not rely on `requestLegacyExternalStorage`.
 
+**Camera capture (`capturePhoto` / `captureVideo`):** the plugin does not declare the camera permission itself. If your app manifest declares `<uses-permission android:name="android.permission.CAMERA" />` the plugin requests it at runtime (refusal throws `ErrorCode.permissionDenied`); without it the system camera app handles its own permission. Add `<uses-feature android:name="android.hardware.camera" android:required="false" />` so non-camera devices can still install the app. Photos / videos are written to the app cache through the plugin's own `FileProvider`, so no host FileProvider configuration is needed. A device without a camera app throws `ErrorCode.unsupported`.
+
 **FileProvider:** The plugin registers its own `FileProvider` for opening files via content URIs. No host-app FileProvider setup is required for basic use.
 
 **Host Activity (required):** The host `Activity` must extend `FlutterFragmentActivity` (not plain `FlutterActivity`), because pickers use Activity Result contracts:
@@ -132,6 +136,17 @@ PhotoKit shows the system prompt **only while status is `notDetermined`**. After
 
 To re-test the first prompt during development, delete the app or reset the Simulator’s Privacy settings. The same bundle ID remembers a previous denial.
 
+**Camera capture (`capturePhoto` / `captureVideo`):** add to the host `Info.plist` (the app is terminated by iOS without them; the plugin returns `ErrorCode.invalidArgs` when a key is missing):
+
+```xml
+<key>NSCameraUsageDescription</key>
+<string>This app takes photos and records videos.</string>
+<key>NSMicrophoneUsageDescription</key>
+<string>This app records audio when capturing videos.</string>
+```
+
+The camera is not available in the iOS Simulator (`ErrorCode.unsupported`); test on a device.
+
 **Directory access:** When the user picks a directory, the plugin stores a security-scoped bookmark in `DirectoryResult.identifier` (prefixed). Prefer that identifier for later access or `openFile`; the display `path` alone is not durable across app launches.
 
 ### macOS
@@ -151,6 +166,8 @@ For `saveToGallery` (Photos library), also add:
 ```
 
 And the same `NSPhotoLibraryAddUsageDescription` / `NSPhotoLibraryUsageDescription` keys as on iOS (in `macos/Runner/Info.plist`).
+
+**Camera:** `capturePhoto` / `captureVideo` are not supported on macOS and throw `ErrorCode.unsupported`; no camera entitlement or usage description is needed.
 
 Without the Photos entitlement, PhotoKit often returns `.denied` immediately and never shows a prompt.
 
@@ -174,13 +191,19 @@ See the example app entitlements under `example/macos/Runner/`.
 
 ### Windows
 
+**Camera:** `capturePhoto` / `captureVideo` are not supported and throw `ErrorCode.unsupported`.
+
 **Permissions:** None. Uses native system file and folder dialogs. `saveToGallery` writes to the user Pictures or Videos known folder. No extra manifest entries are required for this plugin.
 
 ### Linux
 
+**Camera:** `capturePhoto` / `captureVideo` are not supported and throw `ErrorCode.unsupported`.
+
 **Permissions:** None. Uses native system file and folder dialogs. `saveToGallery` writes to XDG Pictures or Videos (there is no system photo library). No extra desktop permissions are required for this plugin.
 
 ### Web
+
+**Camera:** `capturePhoto` / `captureVideo` use `<input type="file" capture>`: mobile browsers open the camera (`user` / `environment` follows `preferredCamera`), desktop browsers show the file chooser. `maxDuration` is ignored; photos are resized on a canvas.
 
 **Permissions:** None at the app level. The browser shows its own file picker / download UI. A user gesture is typically required to open the picker.
 
@@ -293,6 +316,61 @@ Future<List<PlatformFile>?> pickFiles({
 **Returns:** `List<PlatformFile>?` — selected files, or `null` on cancel.
 
 **Throws:** `FileOperationsException` with `ErrorCode.invalidArgs` if `maxFiles` is provided and `< 1`.
+
+### `capturePhoto`
+
+Take a photo with the system camera. Returns `null` if the user cancels.
+
+```dart
+Future<PlatformFile?> capturePhoto({
+  CameraFacing preferredCamera = CameraFacing.rear,
+  double? maxWidth,
+  double? maxHeight,
+  int? imageQuality,
+  bool withData = false,
+})
+```
+
+| Parameter         | Type           | Default             | Description                                                                                                                     |
+|-------------------|----------------|---------------------|---------------------------------------------------------------------------------------------------------------------------------|
+| `preferredCamera` | `CameraFacing` | `CameraFacing.rear` | Front / rear camera hint. Falls back to the available camera.                                                                   |
+| `maxWidth`        | `double?`      | `null`              | Downscale so the photo fits this width (aspect ratio kept, never enlarged). Must be `>= 0`.                                     |
+| `maxHeight`       | `double?`      | `null`              | Same for height. Must be `>= 0`.                                                                                                |
+| `imageQuality`    | `int?`         | `null`              | JPEG quality `0`-`100`. Ignored for photos with transparency (PNG). Values outside the range throw `ErrorCode.invalidArgs`.    |
+| `withData`        | `bool`         | `false`             | Load bytes into `PlatformFile.bytes` (always loaded on Web).                                                                    |
+
+Without `maxWidth` / `maxHeight` / `imageQuality` the original capture is returned untouched.
+
+**Errors:** `ErrorCode.permissionDenied` (camera refused), `ErrorCode.unsupported` (no camera / Linux / macOS / Windows), `ErrorCode.invalidArgs` (bad option, or missing iOS `Info.plist` key), `ErrorCode.ioError`.
+
+### `captureVideo`
+
+Record a video with the system camera. Returns `null` if the user cancels.
+
+```dart
+Future<PlatformFile?> captureVideo({
+  CameraFacing preferredCamera = CameraFacing.rear,
+  Duration? maxDuration,
+  bool withData = false,
+})
+```
+
+`maxDuration` caps the recording length (best effort: some Android camera apps ignore it, browsers cannot enforce it). Other parameters and errors are as for `capturePhoto`.
+
+### `retrieveLostCapture`
+
+Recover a capture lost because Android destroyed the host Activity while the camera app was open. Call once on startup. Returns `LostCaptureResult.empty` on every other platform.
+
+```dart
+Future<LostCaptureResult> retrieveLostCapture()
+```
+
+```dart
+final lost = await XueHuaFileOperations.instance.retrieveLostCapture();
+if (!lost.isEmpty) {
+  final file = lost.files.first; // lost.type is image or video
+}
+```
 
 ### `pickDirectory`
 
@@ -501,6 +579,19 @@ High-level filter for pick dialogs:
 | `FileType.custom` | Rely on `allowedExtensions` / `allowedMimeTypes`       |
 
 On iOS / Android, `image` / `video` / `media` without `allowedExtensions` / `allowedMimeTypes` uses the system photo picker (no photo permission required); passing custom filters keeps the document picker. iOS 13 falls back to the document picker.
+
+### `CameraFacing`
+
+`rear` (default) or `front`. A hint for `capturePhoto` / `captureVideo`.
+
+### `LostCaptureResult`
+
+| Field       | Type                       | Description                                        |
+|-------------|----------------------------|----------------------------------------------------|
+| `files`     | `List<PlatformFile>`       | Recovered capture (at most one file).              |
+| `type`      | `GalleryMediaType?`        | `image` or `video`.                                |
+| `exception` | `FileOperationsException?` | Set when the lost operation failed.                |
+| `isEmpty`   | `bool`                     | `true` when nothing was recovered and no error.    |
 
 ### `GalleryMediaType`
 

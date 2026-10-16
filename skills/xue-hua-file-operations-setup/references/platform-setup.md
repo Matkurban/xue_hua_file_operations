@@ -1,6 +1,6 @@
 # Platform setup reference
 
-Source of truth: host-app configuration required by `xue_hua_file_operations` 1.3.3.
+Source of truth: host-app configuration required by `xue_hua_file_operations` 1.5.0.
 App code must use `XueHuaFileOperations.instance`. The constructor is private.
 
 ```dart
@@ -15,7 +15,7 @@ Do not construct `XueHuaFileOperations()`. Do not call `XueHuaFileOperationsPlat
 
 ```yaml
 dependencies:
-  xue_hua_file_operations: ^1.3.3
+  xue_hua_file_operations: ^1.5.0
 ```
 
 ```bash
@@ -159,3 +159,12 @@ No app-level permissions. A user gesture is typically required to open the picke
 - `galleryPermissionStatus` / `requestGalleryPermission` always return `granted`
 - `openAppSettings` is a no-op
 - `openFile` requires an object-URL `identifier`
+
+## Camera capture (`capturePhoto` / `captureVideo`)
+
+| Platform | Setup |
+| --- | --- |
+| Android | Host `Activity` extends `FlutterFragmentActivity`. Optional `<uses-permission android:name="android.permission.CAMERA" />` (plugin requests it at runtime when declared) and `<uses-feature android:name="android.hardware.camera" android:required="false" />`. No host FileProvider needed. |
+| iOS | `NSCameraUsageDescription`; `NSMicrophoneUsageDescription` for video. Camera is unavailable in the Simulator (`ErrorCode.unsupported`). |
+| macOS / Windows / Linux | Not supported: `ErrorCode.unsupported`. No setup. |
+| Web | Mobile browsers open the camera via the `capture` attribute; desktop browsers show a file chooser. |

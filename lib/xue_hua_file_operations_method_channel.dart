@@ -3,10 +3,12 @@ import 'package:flutter/services.dart';
 
 import 'src/errors/error_code.dart';
 import 'src/errors/file_operations_exception.dart';
+import 'src/models/camera_facing.dart';
 import 'src/models/directory_result.dart';
 import 'src/models/file_type.dart';
 import 'src/models/gallery_media_type.dart';
 import 'src/models/gallery_permission_status.dart';
+import 'src/models/lost_capture_result.dart';
 import 'src/models/platform_file.dart';
 import 'src/models/save_file_result.dart';
 import 'src/models/save_to_gallery_result.dart';
@@ -98,6 +100,54 @@ class MethodChannelXueHuaFileOperations extends XueHuaFileOperationsPlatform {
         .whereType<Map>()
         .map((e) => PlatformFile.fromMap(Map<Object?, Object?>.from(e)))
         .toList();
+  }
+
+  Future<PlatformFile?> _invokeCapture(
+    String method,
+    Map<String, Object?> args,
+  ) async {
+    final result = await _invoke<Map<Object?, Object?>>(method, args);
+    if (result == null) return null;
+    final file = result['file'];
+    if (file is! Map) return null;
+    return PlatformFile.fromMap(Map<Object?, Object?>.from(file));
+  }
+
+  @override
+  Future<PlatformFile?> capturePhoto({
+    CameraFacing preferredCamera = CameraFacing.rear,
+    double? maxWidth,
+    double? maxHeight,
+    int? imageQuality,
+    bool withData = false,
+  }) {
+    return _invokeCapture('capturePhoto', <String, Object?>{
+      'withData': withData,
+      'preferredCamera': preferredCamera.wireName,
+      'maxWidth': ?maxWidth,
+      'maxHeight': ?maxHeight,
+      'imageQuality': ?imageQuality,
+    });
+  }
+
+  @override
+  Future<PlatformFile?> captureVideo({
+    CameraFacing preferredCamera = CameraFacing.rear,
+    Duration? maxDuration,
+    bool withData = false,
+  }) {
+    return _invokeCapture('captureVideo', <String, Object?>{
+      'withData': withData,
+      'preferredCamera': preferredCamera.wireName,
+      'maxDurationSeconds': ?maxDuration?.inSeconds,
+    });
+  }
+
+  @override
+  Future<LostCaptureResult> retrieveLostCapture() async {
+    final result = await _invoke<Map<Object?, Object?>>('retrieveLostCapture');
+    if (result == null) return LostCaptureResult.empty;
+    return LostCaptureResult.fromMap(result);
   }
 
   @override

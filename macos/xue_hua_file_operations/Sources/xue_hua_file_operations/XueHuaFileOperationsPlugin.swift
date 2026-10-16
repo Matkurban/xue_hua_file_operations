@@ -32,6 +32,14 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin {
             openFile(call: call, result: result)
         case "openAppSettings":
             openAppSettings(result: result)
+        case "capturePhoto", "captureVideo":
+            result(FlutterError(
+                code: "unsupported",
+                message: "Camera capture is not supported on macOS",
+                details: nil
+            ))
+        case "retrieveLostCapture":
+            result(nil)
         default:
             result(FlutterMethodNotImplemented)
         }

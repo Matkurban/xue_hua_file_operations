@@ -16,6 +16,7 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
     private var saveFileName: String = "file"
     private var documentInteractionController: UIDocumentInteractionController?
     private var documentInteractionScopedAccess = false
+    private let cameraCapture = CameraCapture()
 
     private enum Mode {
         case pickFile
@@ -53,9 +54,32 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
             openFile(call: call, result: result)
         case "openAppSettings":
             openAppSettings(result: result)
+        case "capturePhoto":
+            capture(call: call, result: result, isVideo: false)
+        case "captureVideo":
+            capture(call: call, result: result, isVideo: true)
+        case "retrieveLostCapture":
+            // iOS never destroys the host while the camera is open.
+            result(nil)
         default:
             result(FlutterMethodNotImplemented)
         }
+    }
+
+    private func capture(call: FlutterMethodCall, result: @escaping FlutterResult, isVideo: Bool) {
+        guard pendingResult == nil, !cameraCapture.isBusy else {
+            result(FlutterError(
+                code: "invalid_args",
+                message: "Another file operation is in progress",
+                details: nil
+            ))
+            return
+        }
+        guard let presenter = rootViewController() else {
+            result(FlutterError(code: "unknown", message: "No view controller", details: nil))
+            return
+        }
+        cameraCapture.capture(call: call, result: result, isVideo: isVideo, presenter: presenter)
     }
 
     private func rootViewController() -> UIViewController? {

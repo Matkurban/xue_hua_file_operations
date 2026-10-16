@@ -40,6 +40,7 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
   List<PlatformFile> _files = const [];
   DirectoryResult? _directory;
   PlatformFile? _selected;
+  CameraFacing _camera = CameraFacing.rear;
 
   Future<void> _run(Future<void> Function() action) async {
     try {
@@ -50,6 +51,54 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
       setState(() => _status = 'Error: $e');
     }
   }
+
+  void _showCaptured(PlatformFile? file, String label) {
+    if (!mounted) return;
+    if (file == null) {
+      setState(() => _status = 'Cancelled');
+      return;
+    }
+    setState(() {
+      _files = [file];
+      _selected = file;
+      _status = '$label captured';
+    });
+  }
+
+  Future<void> _capturePhoto() => _run(() async {
+    final file = await _ops.capturePhoto(
+      preferredCamera: _camera,
+      maxWidth: 1280,
+      maxHeight: 1280,
+      imageQuality: 85,
+      withData: _withData,
+    );
+    _showCaptured(file, 'Photo');
+  });
+
+  Future<void> _captureVideo() => _run(() async {
+    final file = await _ops.captureVideo(
+      preferredCamera: _camera,
+      maxDuration: const Duration(seconds: 30),
+      withData: _withData,
+    );
+    _showCaptured(file, 'Video');
+  });
+
+  Future<void> _retrieveLostCapture() => _run(() async {
+    final lost = await _ops.retrieveLostCapture();
+    if (!mounted) return;
+    setState(() {
+      if (lost.isEmpty) {
+        _status = 'No lost capture';
+      } else {
+        _files = lost.files;
+        _selected = lost.files.isEmpty ? null : lost.files.first;
+        _status = 'Recovered lost ${lost.type?.name ?? "capture"}'
+            '${lost.exception != null ? " (${lost.exception})" : ""}';
+      }
+    });
+  });
 
   Future<void> _pickFile() => _run(() async {
     final file = await _ops.pickFile(withData: _withData, type: _pickType);
@@ -305,6 +354,16 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
                 setState(() => _pickType = selection.first),
           ),
           const SizedBox(height: 8),
+          SegmentedButton<CameraFacing>(
+            segments: const [
+              ButtonSegment(value: CameraFacing.rear, label: Text('rear camera')),
+              ButtonSegment(value: CameraFacing.front, label: Text('front camera')),
+            ],
+            selected: {_camera},
+            onSelectionChanged: (selection) =>
+                setState(() => _camera = selection.first),
+          ),
+          const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -316,6 +375,20 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
               FilledButton.tonal(
                 onPressed: _pickFiles,
                 child: const Text('Pick Files'),
+              ),
+              FilledButton.tonal(
+                key: const Key('capturePhoto'),
+                onPressed: _capturePhoto,
+                child: const Text('Take Photo'),
+              ),
+              FilledButton.tonal(
+                key: const Key('captureVideo'),
+                onPressed: _captureVideo,
+                child: const Text('Record Video'),
+              ),
+              OutlinedButton(
+                onPressed: _retrieveLostCapture,
+                child: const Text('Retrieve Lost Capture'),
               ),
               OutlinedButton(
                 onPressed: _pickDirectory,

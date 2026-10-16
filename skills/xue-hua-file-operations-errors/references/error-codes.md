@@ -87,7 +87,7 @@ enum ErrorCode {
 | `ErrorCode.tooManyFiles` | `too_many_files` | Selection exceeded `maxFiles`. |
 | `ErrorCode.notFound` | `not_found` | File or resource not found. |
 | `ErrorCode.ioError` | `io_error` | I/O failure while reading or writing. |
-| `ErrorCode.unsupported` | `unsupported` | Operation not supported on this platform / configuration (Web `sourcePath`, Web `openFile` with only `path`). |
+| `ErrorCode.unsupported` | `unsupported` | Operation not supported on this platform / configuration (Web `sourcePath`, Web `openFile` with only `path`, `capturePhoto` / `captureVideo` on Linux / macOS / Windows or on a device without a camera app). |
 | `ErrorCode.unknown` | `unknown` | Unexpected / unclassified error, including a null `saveToGallery` native result. |
 
 ### `final String code`
@@ -114,6 +114,9 @@ These run in `XueHuaFileOperations` before the platform call:
 | `saveFile` | `bytes == null` and `sourcePath` null or empty | `Either bytes or sourcePath must be provided` | none |
 | `saveToGallery` | `bytes == null` and `sourcePath` null or empty | `Either bytes or sourcePath must be provided` | none |
 | `saveToGallery` | type cannot be inferred from `fileName` / `sourcePath` | `Unable to infer image/video type from fileName; pass GalleryMediaType or use a media extension` | `{'fileName': fileName}` |
+| `capturePhoto` | `maxWidth` / `maxHeight` < 0 | `maxWidth cannot be negative` / `maxHeight cannot be negative` | `{'maxWidth': ...}` / `{'maxHeight': ...}` |
+| `capturePhoto` | `imageQuality` outside 0-100 | `imageQuality must be between 0 and 100` | `{'imageQuality': imageQuality}` |
+| `captureVideo` | `maxDuration` is negative | `maxDuration cannot be negative` | `{'maxDuration': seconds}` |
 | `openFile` | both `path` and `identifier` null or empty | `Either path or identifier must be provided` | none |
 
 Web-only `unsupported` (after the facade check passes):

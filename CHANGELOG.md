@@ -1,3 +1,13 @@
+## 1.5.0
+
+* **Camera capture.** Add `capturePhoto` (take a photo) and `captureVideo` (record a video) with `preferredCamera` (`CameraFacing.rear` / `front`), photo `maxWidth` / `maxHeight` / `imageQuality`, video `maxDuration` and `withData`. Both return a `PlatformFile?` (`null` on cancel).
+* Add `retrieveLostCapture` + `LostCaptureResult` to recover a capture when Android destroys the host Activity while the camera app is open (other platforms return an empty result).
+* Android: camera intents through `FileProvider`, runtime `CAMERA` permission when the host manifest declares it (`ErrorCode.permissionDenied` on refusal, `ErrorCode.unsupported` without a camera app), EXIF-preserving resize / recompress. Add the `androidx.exifinterface` dependency and camera `<queries>`.
+* iOS: `UIImagePickerController` camera with permission check, front / rear selection and video duration limit; requires `NSCameraUsageDescription` (and `NSMicrophoneUsageDescription` for video).
+* Web: uses the HTML `capture` attribute (mobile browsers) and resizes photos on a canvas; desktop browsers fall back to the file chooser.
+* Linux / macOS / Windows: camera capture is not available and throws `ErrorCode.unsupported`.
+* Add `NOTICE` with the attribution for code adapted from the Flutter `image_picker` packages (BSD-3-Clause).
+
 ## 1.4.0
 
 - update `com.android.tools.build:gradle` to `9.1.0` version
