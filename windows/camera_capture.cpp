@@ -47,6 +47,8 @@ namespace {
 
 constexpr UINT kEventMessage = WM_APP + 1;
 constexpr UINT_PTR kMaxDurationTimer = 1;
+constexpr UINT_PTR kAutoPressTimer = 2;
+constexpr UINT_PTR kAutoStopTimer = 3;
 constexpr int kIdCancel = 2;
 constexpr int kIdPrimary = 3;
 constexpr int kIdStop = 4;
@@ -57,6 +59,15 @@ bool IsAccessDenied(HRESULT hr) {
   return hr == E_ACCESSDENIED ||
          hr == HRESULT_FROM_WIN32(ERROR_ACCESS_DENIED) ||
          hr == MF_E_HW_MFT_FAILED_START_STREAMING;
+}
+
+// UI-test hook: with XUE_HUA_CAMERA_TEST_AUTO=1 in the environment the
+// shutter / Record button is pressed ~1.5 s after the preview started and a
+// recording is stopped 2 s after it started. The real camera is still used.
+bool AutoTestEnabled() {
+  wchar_t value[8] = {};
+  DWORD n = GetEnvironmentVariableW(L"XUE_HUA_CAMERA_TEST_AUTO", value, 8);
+  return n == 1 && value[0] == L'1';
 }
 
 std::string HrMessage(const char *what, HRESULT hr) {
@@ -589,6 +600,7 @@ void CaptureSession::OnEngineEvent(const EngineCallback::Event &event) {
   } else if (event.type == MF_CAPTURE_ENGINE_PREVIEW_STARTED) {
     preview_running_ = true;
     if (primary_button_) EnableWindow(primary_button_, TRUE);
+    if (AutoTestEnabled()) SetTimer(window_, kAutoPressTimer, 1500, nullptr);
   } else if (event.type == MF_CAPTURE_ENGINE_PREVIEW_STOPPED) {
     preview_running_ = false;
   } else if (event.type == MF_CAPTURE_ENGINE_PHOTO_TAKEN) {
@@ -609,6 +621,7 @@ void CaptureSession::OnEngineEvent(const EngineCallback::Event &event) {
       StopRecording();
       return;
     }
+    if (AutoTestEnabled()) SetTimer(window_, kAutoStopTimer, 2000, nullptr);
     if (primary_button_) ShowWindow(primary_button_, SW_HIDE);
     if (stop_button_) ShowWindow(stop_button_, SW_SHOW);
     if (options_.max_duration_seconds > 0) {
@@ -825,6 +838,16 @@ LRESULT CaptureSession::HandleMessage(HWND hwnd, UINT message, WPARAM wparam,
       }
       break;
     case WM_TIMER:
+      if (wparam == kAutoPressTimer) {
+        KillTimer(hwnd, kAutoPressTimer);
+        StartCapture();
+        return 0;
+      }
+      if (wparam == kAutoStopTimer) {
+        KillTimer(hwnd, kAutoStopTimer);
+        StopRecording();
+        return 0;
+      }
       if (wparam == kMaxDurationTimer) {
         KillTimer(hwnd, kMaxDurationTimer);
         StopRecording();
