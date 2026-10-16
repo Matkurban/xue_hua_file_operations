@@ -24,6 +24,7 @@ final class CameraCapture: NSObject, AVCapturePhotoCaptureDelegate,
     private var photoOutput: AVCapturePhotoOutput?
     private var movieOutput: AVCaptureMovieFileOutput?
     private var panel: NSPanel?
+    private var previewLayer: AVCaptureVideoPreviewLayer?
     private var parentWindow: NSWindow?
     private var primaryButton: NSButton?
     private var stopButton: NSButton?
@@ -247,6 +248,7 @@ final class CameraCapture: NSObject, AVCapturePhotoCaptureDelegate,
         layer.frame = preview.bounds
         layer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
         preview.layer?.addSublayer(layer)
+        previewLayer = layer
         preview.layer?.backgroundColor = NSColor.black.cgColor
         content.addSubview(preview)
 
@@ -550,11 +552,19 @@ final class CameraCapture: NSObject, AVCapturePhotoCaptureDelegate,
         cancelRequested = false
         recordingURL = nil
         let session = self.session
+        let layer = previewLayer
         self.session = nil
+        previewLayer = nil
         photoOutput = nil
         movieOutput = nil
         closePanel()
-        sessionQueue.async { session?.stopRunning() }
+        // The preview layer must be released on the session queue, after the
+        // session stopped: releasing it on the main thread while stopRunning()
+        // holds the session lock deadlocks the app.
+        sessionQueue.async {
+            session?.stopRunning()
+            _ = layer
+        }
         result?(value)
     }
 }
