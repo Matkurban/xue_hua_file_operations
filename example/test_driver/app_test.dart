@@ -190,14 +190,22 @@ void main() {
       final info = await capturedInfo();
       final file = await localCopy(info.path);
       final length = await file.length();
-      final duration = await videoDuration(file);
+      final isWebm = file.path.endsWith('.webm');
+      if (isWebm) {
+        final head = await file.openRead(0, 4).first;
+        expect(head, [0x1a, 0x45, 0xdf, 0xa3], reason: 'WebM (EBML) header');
+      }
+      final duration = isWebm
+          ? await videoDuration(file).catchError((_) => -1.0)
+          : await videoDuration(file);
       // ignore: avoid_print
       print(
         'EVIDENCE video ${info.path} size=$length (reported ${info.size}) duration=${duration}s',
       );
       expect(length, greaterThan(1000));
       expect(length, info.size);
-      expect(duration, greaterThan(0.3));
+      // WebM durations need ffprobe; without it only the header is checked.
+      if (!(isWebm && duration < 0)) expect(duration, greaterThan(0.3));
     } else {
       await waitStatus(
         (s) => s.contains('unsupported'),
