@@ -6,9 +6,8 @@ helper next to `flutter drive`:
 
     python3 test_driver/tools/android_camera_helper.py <adb> <serial> <applicationId>
 
-It grants the CAMERA / RECORD_AUDIO permissions once (the app must be
-installed already), then keeps watching the
-screen. When the AOSP Camera2 app (com.android.camera2) shows up it taps
+It taps "Allow" on runtime permission dialogs (no `pm grant`: that would
+kill the app under test) and keeps watching the screen. When the AOSP Camera2 app (com.android.camera2) shows up it taps
 "Shutter" (photo: once; video: once to start, again after ~3 s to stop) and
 then the review "Done" button. Stops after 20 minutes or on Ctrl-C.
 """
@@ -58,17 +57,22 @@ def action():
     return m.group(1) if m else ''
 
 
-# Grant once, before the app starts (granting kills a running app). The app
-# must already be installed (run `flutter build apk --debug` + `adb install`,
-# or a first `flutter drive`, beforehand).
-for perm in ('CAMERA', 'RECORD_AUDIO'):
-    sh('shell', 'pm', 'grant', app_id, f'android.permission.{perm}')
 deadline = time.time() + 20 * 60
 shutter_taps = 0
 while time.time() < deadline:
     focus = sh('shell', 'dumpsys', 'window')
-    if 'com.android.camera2' not in ''.join(
-            l for l in focus.splitlines() if 'mCurrentFocus' in l):
+    current = ''.join(l for l in focus.splitlines() if 'mCurrentFocus' in l)
+    if 'permissioncontroller' in current or 'packageinstaller' in current:
+        root = ui()
+        allow = root is not None and (
+            find(root, rid='permission_allow_foreground_only_button')
+            or find(root, rid='permission_allow_button')
+            or find(root, rid='permission_allow_one_time_button'))
+        if allow:
+            tap(allow, 'permission Allow')
+        time.sleep(1)
+        continue
+    if 'com.android.camera2' not in current:
         shutter_taps = 0
         time.sleep(1)
         continue
