@@ -211,7 +211,7 @@ tccutil reset Photos com.your.bundle.id
 
 ### Windows
 
-**相机：** `capturePhoto` / `captureVideo` 会弹出原生预览窗口（Media Foundation capture engine），含 *拍照* / *录制* / *停止* / *取消* 按钮。照片为 JPEG，视频为 H.264 + AAC 的 MP4（没有麦克风时不录音）。`preferredCamera` 按设备名称优先选择内置（前置）或外接（后置）摄像头。桌面（Win32）应用无需 manifest 声明，但需在 Windows 设置 → 隐私和安全性 → 相机 中开启“允许桌面应用访问相机”，否则抛出 `ErrorCode.permissionDenied`；无摄像头抛出 `ErrorCode.unsupported`。（已按 Windows SDK 实现，尚未在真实 Windows 机器上验证。）
+**相机：** `capturePhoto` / `captureVideo` 会弹出原生预览窗口（Media Foundation capture engine），含 *拍照* / *录制* / *停止* / *取消* 按钮。照片为 JPEG，视频为 H.264 + AAC 的 MP4（没有麦克风时不录音）。`preferredCamera` 按设备名称优先选择内置（前置）或外接（后置）摄像头。桌面（Win32）应用无需 manifest 声明，但需在 Windows 设置 → 隐私和安全性 → 相机 中开启“允许桌面应用访问相机”，否则抛出 `ErrorCode.permissionDenied`；无摄像头抛出 `ErrorCode.unsupported`。（已在 Windows 11 + USB 摄像头上验证：640x480 JPEG、2 秒 H.264 MP4。）UI 测试钩子：以环境变量 `XUE_HUA_CAMERA_TEST_AUTO=1` 启动应用，预览开始约 1.5 秒后自动按下拍照 / 录制，录制开始 2 秒后自动停止（使用真实摄像头；未设置该变量时无任何影响）。
 
 **权限：** 无需额外权限。使用系统原生文件 / 文件夹对话框。`saveToGallery` 写入用户 Pictures 或 Videos 已知文件夹。无需为本插件添加额外清单配置。
 

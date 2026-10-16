@@ -6,7 +6,7 @@
 * iOS: `UIImagePickerController` camera with permission check, front / rear selection and video duration limit; requires `NSCameraUsageDescription` (and `NSMicrophoneUsageDescription` for video).
 * Web: uses the HTML `capture` attribute (mobile browsers) and resizes photos on a canvas; desktop browsers fall back to the file chooser.
 * macOS: AVFoundation capture with a native preview sheet, built-in / external camera selection, camera + microphone authorization (`ErrorCode.permissionDenied`), photo resize / quality and video duration limit. Requires the `com.apple.security.device.camera` / `device.audio-input` entitlements and `NSCameraUsageDescription` / `NSMicrophoneUsageDescription`.
-* Windows: Media Foundation capture engine with a native preview window, JPEG photos (WIC resize / quality) and H.264/AAC MP4 videos; `E_ACCESSDENIED` maps to `ErrorCode.permissionDenied`, no camera to `ErrorCode.unsupported`. Not yet verified on a physical Windows machine.
+* Windows: Media Foundation capture engine with a native preview window, JPEG photos (WIC resize / quality) and H.264/AAC MP4 videos; `E_ACCESSDENIED` maps to `ErrorCode.permissionDenied`, no camera to `ErrorCode.unsupported`. Verified on Windows 11 with a USB webcam; `XUE_HUA_CAMERA_TEST_AUTO=1` auto-presses the shutter for UI tests.
 * Linux: GStreamer + GTK preview dialog (JPEG photos, MP4/H.264 or WebM videos). GStreamer is detected through pkg-config at build time; without it the capture methods throw `ErrorCode.unsupported`. `XUE_HUA_CAMERA_TEST_SOURCE` / `XUE_HUA_CAMERA_TEST_AUTO` environment variables allow camera-less testing.
 * Add `NOTICE` with the attribution for code adapted from the Flutter `image_picker` packages (BSD-3-Clause).
 
