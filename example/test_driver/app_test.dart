@@ -105,7 +105,7 @@ void main() {
     fail('no JPEG SOF marker found');
   }
 
-  /// Duration in seconds of a video, with ffprobe or (macOS) mdls.
+  /// Duration in seconds of a video, with ffprobe or the MP4 `mvhd` atom.
   Future<double> videoDuration(File file) async {
     final r = await Process.run('ffprobe', [
       '-v',
@@ -117,16 +117,23 @@ void main() {
       file.path,
     ]).catchError((_) => ProcessResult(0, 127, '', ''));
     if (r.exitCode == 0) return double.parse((r.stdout as String).trim());
-    if (Platform.isMacOS) {
-      final m = await Process.run('mdls', [
-        '-raw',
-        '-name',
-        'kMDItemDurationSeconds',
-        file.path,
-      ]);
-      return double.parse((m.stdout as String).trim());
+    // No ffprobe: read the duration from the MP4 / QuickTime `mvhd` atom.
+    final b = await file.readAsBytes();
+    final data = ByteData.sublistView(b);
+    for (var o = 4; o + 32 < b.length; o++) {
+      if (b[o] == 0x6d &&
+          b[o + 1] == 0x76 &&
+          b[o + 2] == 0x68 &&
+          b[o + 3] == 0x64) {
+        final v = b[o + 4];
+        final timescale = data.getUint32(o + (v == 1 ? 24 : 16));
+        final duration = v == 1
+            ? data.getUint64(o + 28)
+            : data.getUint32(o + 20);
+        return duration / timescale;
+      }
     }
-    fail('neither ffprobe nor mdls is available to validate the video');
+    fail('no ffprobe and no mvhd atom found in ${file.path}');
   }
 
   const slow = Timeout(Duration(minutes: 4));

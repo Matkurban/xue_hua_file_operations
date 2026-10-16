@@ -52,7 +52,7 @@ def tap(point, what):
 
 
 def action():
-    out = sh('shell', 'dumpsys', 'activity', 'activities')
+    out = sh('shell', 'dumpsys', 'activity', 'top')
     m = re.search(r'act=android\.media\.action\.(\w+)', out)
     return m.group(1) if m else ''
 
