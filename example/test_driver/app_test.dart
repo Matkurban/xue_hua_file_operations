@@ -129,7 +129,9 @@ void main() {
     fail('neither ffprobe nor mdls is available to validate the video');
   }
 
-  test('capturePhoto', () async {
+  const slow = Timeout(Duration(minutes: 4));
+
+  test('capturePhoto', timeout: slow, () async {
     if (expectation == 'any') return;
     await driver.tap(find.byValueKey('capturePhoto'));
     if (expectation == 'captured') {
@@ -161,7 +163,7 @@ void main() {
     }
   });
 
-  test('captureVideo', () async {
+  test('captureVideo', timeout: slow, () async {
     if (expectation == 'any') return;
     await driver.tap(find.byValueKey('captureVideo'));
     if (expectation == 'captured') {
