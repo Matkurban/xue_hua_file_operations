@@ -674,7 +674,9 @@ bool CaptureSession::StartPhoto() {
   ComPtr<IMFMediaType> type;
   if (SUCCEEDED(hr)) hr = MFCreateMediaType(&type);
   if (SUCCEEDED(hr)) hr = source_type->CopyAllItems(type.Get());
-  if (SUCCEEDED(hr)) hr = type->SetGUID(MF_MT_SUBTYPE, MFImageFormat_JPEG);
+  if (SUCCEEDED(hr)) hr = type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Image);
+  // The photo sink wants the WIC container GUID as the subtype.
+  if (SUCCEEDED(hr)) hr = type->SetGUID(MF_MT_SUBTYPE, GUID_ContainerFormatJpeg);
   if (SUCCEEDED(hr)) {
     photo->RemoveAllStreams();
     DWORD index = 0;
