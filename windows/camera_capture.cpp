@@ -1,3 +1,7 @@
+#ifndef NOMINMAX
+#define NOMINMAX  // <windows.h> min/max macros break std::min/std::max
+#endif
+
 #include "camera_capture.h"
 
 #include <windows.h>
