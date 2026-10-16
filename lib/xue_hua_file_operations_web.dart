@@ -7,13 +7,16 @@ import 'package:web/web.dart' as web;
 
 import 'src/errors/error_code.dart';
 import 'src/errors/file_operations_exception.dart';
+import 'src/models/camera_facing.dart';
 import 'src/models/directory_result.dart';
 import 'src/models/file_type.dart';
 import 'src/models/gallery_media_type.dart';
 import 'src/models/gallery_permission_status.dart';
+import 'src/models/lost_capture_result.dart';
 import 'src/models/platform_file.dart';
 import 'src/models/save_file_result.dart';
 import 'src/models/save_to_gallery_result.dart';
+import 'src/utils/media_resize.dart';
 import 'xue_hua_file_operations_platform_interface.dart';
 
 /// Web implementation using HTML file input / Blob download.
@@ -57,6 +60,7 @@ class XueHuaFileOperationsWeb extends XueHuaFileOperationsPlatform {
     required bool multiple,
     required bool directory,
     required String accept,
+    String? capture,
   }) {
     final completer = Completer<List<web.File>>();
     final input = web.HTMLInputElement()
@@ -65,6 +69,9 @@ class XueHuaFileOperationsWeb extends XueHuaFileOperationsPlatform {
 
     if (accept.isNotEmpty) {
       input.accept = accept;
+    }
+    if (capture != null) {
+      input.setAttribute('capture', capture);
     }
     if (directory) {
       input.setAttribute('webkitdirectory', '');
@@ -121,6 +128,135 @@ class XueHuaFileOperationsWeb extends XueHuaFileOperationsPlatform {
       identifier: identifier,
     );
   }
+
+  Future<web.HTMLImageElement> _loadImage(String url) {
+    final completer = Completer<web.HTMLImageElement>();
+    final image = web.HTMLImageElement();
+    image.addEventListener(
+      'load',
+      (web.Event _) {
+        if (!completer.isCompleted) completer.complete(image);
+      }.toJS,
+    );
+    image.addEventListener(
+      'error',
+      (web.Event _) {
+        if (!completer.isCompleted) {
+          completer.completeError('Unable to decode image');
+        }
+      }.toJS,
+    );
+    image.src = url;
+    return completer.future;
+  }
+
+  /// Re-encodes [file] on a canvas so it honours the size / quality limits.
+  ///
+  /// Falls back to the original bytes when the image cannot be decoded and
+  /// leaves GIFs untouched (a canvas would drop the animation).
+  Future<PlatformFile> _toCapturedPhoto(
+    web.File file, {
+    double? maxWidth,
+    double? maxHeight,
+    int? imageQuality,
+  }) async {
+    if (file.type == 'image/gif' ||
+        !mediaResizeNeeded(maxWidth, maxHeight, imageQuality)) {
+      return _toPlatformFile(file);
+    }
+    final url = web.URL.createObjectURL(file);
+    try {
+      final image = await _loadImage(url);
+      final (width, height) = downScaledSize(
+        image.naturalWidth,
+        image.naturalHeight,
+        maxWidth,
+        maxHeight,
+      );
+      final canvas = web.HTMLCanvasElement()
+        ..width = width
+        ..height = height;
+      canvas.context2D.drawImage(
+        image,
+        0,
+        0,
+        width.toDouble(),
+        height.toDouble(),
+      );
+      final completer = Completer<web.Blob?>();
+      canvas.toBlob(
+        (web.Blob? blob) {
+          completer.complete(blob);
+        }.toJS,
+        file.type.isEmpty ? 'image/jpeg' : file.type,
+        ((imageQuality ?? 100) / 100).toJS,
+      );
+      final blob = await completer.future;
+      if (blob == null) return await _toPlatformFile(file);
+      final buffer = await blob.arrayBuffer().toDart;
+      return PlatformFile(
+        name: file.name,
+        size: blob.size,
+        path: null,
+        bytes: buffer.toDart.asUint8List(),
+        identifier: web.URL.createObjectURL(blob),
+      );
+    } catch (_) {
+      return _toPlatformFile(file);
+    } finally {
+      web.URL.revokeObjectURL(url);
+    }
+  }
+
+  /// HTML Media Capture: `user` = front, `environment` = rear camera.
+  /// Only mobile browsers honour it; desktop browsers show a file chooser.
+  String _captureAttribute(CameraFacing preferredCamera) =>
+      preferredCamera == CameraFacing.front ? 'user' : 'environment';
+
+  @override
+  Future<PlatformFile?> capturePhoto({
+    CameraFacing preferredCamera = CameraFacing.rear,
+    double? maxWidth,
+    double? maxHeight,
+    int? imageQuality,
+    bool withData = false,
+  }) async {
+    final files = await _pickHtmlFiles(
+      multiple: false,
+      directory: false,
+      accept: 'image/*',
+      capture: _captureAttribute(preferredCamera),
+    );
+    if (files.isEmpty) return null;
+    return _toCapturedPhoto(
+      files.first,
+      maxWidth: maxWidth,
+      maxHeight: maxHeight,
+      imageQuality: imageQuality,
+    );
+  }
+
+  /// Browsers cannot cap the recording length, so `maxDuration` is ignored.
+  @override
+  Future<PlatformFile?> captureVideo({
+    CameraFacing preferredCamera = CameraFacing.rear,
+    Duration? maxDuration,
+    bool withData = false,
+  }) async {
+    final files = await _pickHtmlFiles(
+      multiple: false,
+      directory: false,
+      accept: 'video/*',
+      capture: _captureAttribute(preferredCamera),
+    );
+    if (files.isEmpty) return null;
+    return _toPlatformFile(files.first);
+  }
+
+  /// A browser page never loses a pending capture, so nothing to recover.
+  @override
+  Future<LostCaptureResult> retrieveLostCapture() async =>
+      LostCaptureResult.empty;
 
   @override
   Future<PlatformFile?> pickFile({

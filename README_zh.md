@@ -11,6 +11,8 @@
 - 选择单个文件（`pickFile`）或多个文件（`pickFiles`）
 - 支持按 `FileType`、扩展名和/或 MIME 类型过滤
 - 多选可选 `maxFiles` 上限（在用户选择后校验）
+- 使用系统相机拍照（`capturePhoto`）或录像（`captureVideo`），支持前/后置摄像头偏好、照片尺寸与质量、视频时长上限
+- 找回因 Android Activity 被销毁而丢失的拍摄结果（`retrieveLostCapture`）
 - 选择目录（`pickDirectory`）
 - 另存为（`saveFile`）：写入字节，或从源路径复制
 - 将图片或视频保存到系统图库（`saveToGallery`）
@@ -26,7 +28,7 @@
 
 ```yaml
 dependencies:
-  xue_hua_file_operations: ^1.4.0
+  xue_hua_file_operations: ^1.5.0
 ```
 
 然后执行：
@@ -98,6 +100,8 @@ dart run skills@ get --all
 
 不要依赖 `requestLegacyExternalStorage`。
 
+**相机拍摄（`capturePhoto` / `captureVideo`）：** 插件本身不声明相机权限。若宿主 App 的 manifest 声明了 `<uses-permission android:name="android.permission.CAMERA" />`，插件会在运行时申请（拒绝时抛出 `ErrorCode.permissionDenied`）；未声明时由系统相机应用自行处理权限。建议同时添加 `<uses-feature android:name="android.hardware.camera" android:required="false" />`，以便无相机设备仍可安装。照片 / 视频通过插件自有的 `FileProvider` 写入应用缓存目录，无需在宿主 App 中额外配置 FileProvider。设备没有相机应用时抛出 `ErrorCode.unsupported`。
+
 **FileProvider：** 插件已注册自有 `FileProvider`，用于通过 content URI 打开文件。基础使用无需在宿主 App 中额外配置 FileProvider。
 
 **宿主 Activity（必需）：** 宿主 `Activity` 必须继承 `FlutterFragmentActivity`（不能使用普通的 `FlutterActivity`），因为选择器依赖 Activity Result contracts：
@@ -132,6 +136,17 @@ PhotoKit **仅在状态为 `notDetermined` 时**弹出系统授权框。用户�
 
 开发时若要重新测试首次弹框，请删除应用或重置模拟器隐私设置。同一 Bundle ID 会记住上次的拒绝。
 
+**相机拍摄（`capturePhoto` / `captureVideo`）：** 请在宿主 `Info.plist` 中添加以下键（缺失时 iOS 会直接终止应用；插件在缺少键时返回 `ErrorCode.invalidArgs`）：
+
+```xml
+<key>NSCameraUsageDescription</key>
+<string>此应用使用相机拍照和录像。</string>
+<key>NSMicrophoneUsageDescription</key>
+<string>此应用在录像时录制声音。</string>
+```
+
+iOS 模拟器没有相机（返回 `ErrorCode.unsupported`），请使用真机测试。
+
 **目录访问：** 用户选择目录后，插件会在 `DirectoryResult.identifier` 中保存带前缀的安全作用域 bookmark。后续访问或调用 `openFile` 时请优先使用该 `identifier`；仅依赖展示用 `path` 在应用重启后不可靠。
 
 ### macOS
@@ -154,6 +169,8 @@ PhotoKit **仅在状态为 `notDetermined` 时**弹出系统授权框。用户�
 
 若缺少 Photos entitlement，PhotoKit 常会立刻返回 `.denied` 且永不弹框。
 
+**相机：** macOS 不支持 `capturePhoto` / `captureVideo`，调用会抛出 `ErrorCode.unsupported`，无需相机 entitlement 或用途描述。
+
 与 iOS 相同：系统只弹一次授权框。macOS 始终申请 PhotoKit `readWrite`（忽略 `forAlbum`）：系统设置 → 隐私与安全性 → 照片只列出读/写客户端。`addOnly` 不会出现在该列表，且可能在从未弹框时就返回 `.denied`。
 
 **启动方式（TCC 责任进程）：** macOS 会把照片授权框记到父进程上。若从 Cursor / VS Code 执行 `flutter run -d macos`，系统可能静默拒绝，并且 **不会** 把本应用列在「照片」里。请用系统「终端」测试，或先构建再打开 `.app`：
@@ -174,13 +191,19 @@ tccutil reset Photos com.your.bundle.id
 
 ### Windows
 
+**相机：** 不支持 `capturePhoto` / `captureVideo`，调用会抛出 `ErrorCode.unsupported`。
+
 **权限：** 无需额外权限。使用系统原生文件 / 文件夹对话框。`saveToGallery` 写入用户 Pictures 或 Videos 已知文件夹。无需为本插件添加额外清单配置。
 
 ### Linux
 
+**相机：** 不支持 `capturePhoto` / `captureVideo`，调用会抛出 `ErrorCode.unsupported`。
+
 **权限：** 无需额外权限。使用系统原生文件 / 文件夹对话框。`saveToGallery` 写入 XDG Pictures 或 Videos（Linux 没有系统相册 API）。无需为本插件添加额外桌面权限。
 
 ### Web
+
+**相机：** `capturePhoto` / `captureVideo` 使用 `<input type="file" capture>`：移动端浏览器会打开相机（`user` / `environment` 对应 `preferredCamera`），桌面浏览器显示文件选择器。`maxDuration` 被忽略；照片在 canvas 中缩放。
 
 **权限：** 应用层无需额外权限。浏览器会展示自带的文件选择 / 下载界面。打开选择器通常需要用户手势。
 
@@ -293,6 +316,61 @@ Future<List<PlatformFile>?> pickFiles({
 **返回值：** `List<PlatformFile>?` — 选中的文件列表；取消时为 `null`。
 
 **异常：** 若提供了 `maxFiles` 且 `< 1`，抛出 `ErrorCode.invalidArgs`。
+
+### `capturePhoto`
+
+使用系统相机拍照。用户取消时返回 `null`。
+
+```dart
+Future<PlatformFile?> capturePhoto({
+  CameraFacing preferredCamera = CameraFacing.rear,
+  double? maxWidth,
+  double? maxHeight,
+  int? imageQuality,
+  bool withData = false,
+})
+```
+
+| 参数              | 类型           | 默认值              | 说明                                                                                              |
+|-------------------|----------------|---------------------|---------------------------------------------------------------------------------------------------|
+| `preferredCamera` | `CameraFacing` | `CameraFacing.rear` | 前 / 后置摄像头偏好，不可用时回退到可用摄像头。                                                   |
+| `maxWidth`        | `double?`      | `null`              | 缩小照片使其不超过该宽度（保持宽高比，不放大）。必须 `>= 0`。                                     |
+| `maxHeight`       | `double?`      | `null`              | 同上，限制高度。必须 `>= 0`。                                                                     |
+| `imageQuality`    | `int?`         | `null`              | JPEG 质量 `0`-`100`；带透明通道（PNG）的照片忽略。超出范围抛出 `ErrorCode.invalidArgs`。          |
+| `withData`        | `bool`         | `false`             | 将内容读入 `PlatformFile.bytes`（Web 始终加载）。                                                 |
+
+未传 `maxWidth` / `maxHeight` / `imageQuality` 时返回未处理的原始照片。
+
+**错误：** `ErrorCode.permissionDenied`（拒绝相机权限）、`ErrorCode.unsupported`（无相机 / Linux / macOS / Windows）、`ErrorCode.invalidArgs`（参数非法，或缺少 iOS `Info.plist` 键）、`ErrorCode.ioError`。
+
+### `captureVideo`
+
+使用系统相机录像。用户取消时返回 `null`。
+
+```dart
+Future<PlatformFile?> captureVideo({
+  CameraFacing preferredCamera = CameraFacing.rear,
+  Duration? maxDuration,
+  bool withData = false,
+})
+```
+
+`maxDuration` 限制录制时长（尽力而为：部分 Android 相机应用会忽略，浏览器无法强制）。其余参数与错误同 `capturePhoto`。
+
+### `retrieveLostCapture`
+
+找回 Android 在相机应用打开期间销毁宿主 Activity 导致丢失的拍摄结果。请在启动时调用一次。其他平台始终返回 `LostCaptureResult.empty`。
+
+```dart
+Future<LostCaptureResult> retrieveLostCapture()
+```
+
+```dart
+final lost = await XueHuaFileOperations.instance.retrieveLostCapture();
+if (!lost.isEmpty) {
+  final file = lost.files.first; // lost.type 为 image 或 video
+}
+```
 
 ### `pickDirectory`
 
@@ -501,6 +579,19 @@ Future<void> openFile({String? path, String? identifier})
 | `FileType.custom` | 依赖 `allowedExtensions` / `allowedMimeTypes`   |
 
 在 iOS / Android 上，`image` / `video` / `media` 且未传 `allowedExtensions` / `allowedMimeTypes` 时使用系统照片选择器（无需相册权限）；传入自定义过滤时仍使用文档选择器。iOS 13 回退到文档选择器。
+
+### `CameraFacing`
+
+`rear`（默认）或 `front`。作为 `capturePhoto` / `captureVideo` 的偏好提示。
+
+### `LostCaptureResult`
+
+| 字段        | 类型                       | 说明                                  |
+|-------------|----------------------------|---------------------------------------|
+| `files`     | `List<PlatformFile>`       | 找回的拍摄结果（最多一个文件）。      |
+| `type`      | `GalleryMediaType?`        | `image` 或 `video`。                  |
+| `exception` | `FileOperationsException?` | 丢失的操作失败时设置。                |
+| `isEmpty`   | `bool`                     | 既无结果也无错误时为 `true`。         |
 
 ### `GalleryMediaType`
 

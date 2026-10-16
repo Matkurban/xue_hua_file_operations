@@ -2,7 +2,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:xue_hua_file_operations/src/errors/error_code.dart';
 import 'package:xue_hua_file_operations/src/errors/file_operations_exception.dart';
+import 'package:xue_hua_file_operations/src/models/camera_facing.dart';
 import 'package:xue_hua_file_operations/src/models/file_type.dart';
+import 'package:xue_hua_file_operations/src/utils/media_resize.dart';
 import 'package:xue_hua_file_operations/src/models/gallery_media_type.dart';
 import 'package:xue_hua_file_operations/src/models/gallery_permission_status.dart';
 import 'package:xue_hua_file_operations/xue_hua_file_operations_method_channel.dart';
@@ -16,6 +18,128 @@ void main() {
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
+  });
+
+  test('capturePhoto encodes args and decodes map', () async {
+    late MethodCall captured;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+          captured = methodCall;
+          return {
+            'file': {
+              'name': 'p.jpg',
+              'size': 4,
+              'path': '/tmp/p.jpg',
+              'identifier': 'file:///tmp/p.jpg',
+            },
+          };
+        });
+
+    final file = await platform.capturePhoto(
+      preferredCamera: CameraFacing.front,
+      maxWidth: 640,
+      imageQuality: 70,
+      withData: true,
+    );
+
+    expect(captured.method, 'capturePhoto');
+    final args = captured.arguments as Map;
+    expect(args['preferredCamera'], 'front');
+    expect(args['maxWidth'], 640.0);
+    expect(args.containsKey('maxHeight'), isFalse);
+    expect(args['imageQuality'], 70);
+    expect(args['withData'], isTrue);
+    expect(file?.name, 'p.jpg');
+    expect(file?.path, '/tmp/p.jpg');
+  });
+
+  test(
+    'captureVideo encodes maxDurationSeconds; null means cancelled',
+    () async {
+      late MethodCall captured;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+            captured = methodCall;
+            return null;
+          });
+
+      final file = await platform.captureVideo(
+        maxDuration: const Duration(minutes: 1),
+      );
+
+      expect(captured.method, 'captureVideo');
+      final args = captured.arguments as Map;
+      expect(args['maxDurationSeconds'], 60);
+      expect(args['preferredCamera'], 'rear');
+      expect(file, isNull);
+    },
+  );
+
+  test('capturePhoto maps unsupported PlatformException', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+          throw PlatformException(code: 'unsupported', message: 'no camera');
+        });
+
+    expect(
+      () => platform.capturePhoto(),
+      throwsA(
+        isA<FileOperationsException>().having(
+          (e) => e.code,
+          'code',
+          ErrorCode.unsupported,
+        ),
+      ),
+    );
+  });
+
+  test(
+    'retrieveLostCapture decodes recovered capture and empty result',
+    () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+            return {
+              'files': [
+                {'name': 'l.mp4', 'size': 9, 'path': '/tmp/l.mp4'},
+              ],
+              'type': 'video',
+            };
+          });
+      final lost = await platform.retrieveLostCapture();
+      expect(lost.isEmpty, isFalse);
+      expect(lost.type, GalleryMediaType.video);
+      expect(lost.files.single.name, 'l.mp4');
+
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            channel,
+            (MethodCall methodCall) async => null,
+          );
+      expect((await platform.retrieveLostCapture()).isEmpty, isTrue);
+
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+            return {
+              'files': [],
+              'type': 'image',
+              'errorCode': 'io_error',
+              'errorMessage': 'bad',
+            };
+          });
+      final failed = await platform.retrieveLostCapture();
+      expect(failed.exception?.code, ErrorCode.ioError);
+    },
+  );
+
+  test('media resize helpers', () {
+    expect(mediaResizeNeeded(null, null, null), isFalse);
+    expect(mediaResizeNeeded(100, null, null), isTrue);
+    expect(mediaResizeNeeded(null, null, 50), isTrue);
+    expect(mediaResizeNeeded(null, null, 150), isFalse);
+    expect(downScaledSize(4000, 3000, 1000, null), (1000, 750));
+    expect(downScaledSize(4000, 3000, 1000, 300), (400, 300));
+    expect(downScaledSize(400, 300, 1000, 1000), (400, 300));
+    expect(downScaledSize(400, 300, null, null), (400, 300));
   });
 
   test('pickFile encodes args and decodes map', () async {

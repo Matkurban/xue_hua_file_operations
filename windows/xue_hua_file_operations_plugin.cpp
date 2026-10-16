@@ -755,6 +755,11 @@ void XueHuaFileOperationsPlugin::HandleMethodCall(
     OpenFile(args, std::move(result));
   } else if (method == "openAppSettings") {
     OpenAppSettings(std::move(result));
+  } else if (method == "capturePhoto" || method == "captureVideo") {
+    // Desktop Windows has no system camera capture UI.
+    result->Error("unsupported", "Camera capture is not supported on Windows");
+  } else if (method == "retrieveLostCapture") {
+    result->Success();
   } else {
     result->NotImplemented();
   }

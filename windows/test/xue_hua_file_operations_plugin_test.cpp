@@ -31,5 +31,19 @@ TEST(XueHuaFileOperationsPlugin, UnknownMethodIsNotImplemented) {
   EXPECT_TRUE(not_implemented);
 }
 
+TEST(XueHuaFileOperationsPlugin, CapturePhotoIsUnsupported) {
+  XueHuaFileOperationsPlugin plugin(nullptr);
+  std::string code;
+  plugin.HandleMethodCall(
+      MethodCall("capturePhoto", std::make_unique<EncodableValue>()),
+      std::make_unique<MethodResultFunctions<>>(
+          nullptr,
+          [&code](const std::string &error_code, const std::string &,
+                  const EncodableValue *) { code = error_code; },
+          nullptr));
+
+  EXPECT_EQ(code, "unsupported");
+}
+
 }  // namespace test
 }  // namespace xue_hua_file_operations

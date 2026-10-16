@@ -7,6 +7,9 @@ import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ResolveInfo
+import android.hardware.camera2.CameraCharacteristics
+import android.provider.MediaStore
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -34,6 +37,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileNotFoundException
 import java.io.FileOutputStream
+import java.util.UUID
 import kotlin.concurrent.thread
 import androidx.core.content.edit
 
@@ -62,7 +66,22 @@ class XueHuaFileOperationsPlugin :
     private var pickVisualMediaLauncher: ActivityResultLauncher<PickVisualMediaRequest>? = null
     private var pickMultipleVisualMediaLauncher:
             ActivityResultLauncher<PickVisualMediaRequest>? = null
+    private var captureLauncher: ActivityResultLauncher<Intent>? = null
+    private var cameraPermissionLauncher: ActivityResultLauncher<String>? = null
+    private var pendingCapture: CaptureRequest? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    /** A camera capture that is waiting for the camera app / permission. */
+    private class CaptureRequest(
+        val isVideo: Boolean,
+        val file: File,
+        val preferredCamera: String,
+        val maxDurationSeconds: Int?,
+        val maxWidth: Double?,
+        val maxHeight: Double?,
+        val imageQuality: Int?,
+        val withData: Boolean,
+    )
 
     private class GalleryRequest(
         val fileName: String,
@@ -105,6 +124,9 @@ class XueHuaFileOperationsPlugin :
             "requestGalleryPermission" -> requestGalleryPermission(result)
             "openFile" -> openFile(call, result)
             "openAppSettings" -> openAppSettings(result)
+            "capturePhoto" -> capture(call, result, isVideo = false)
+            "captureVideo" -> capture(call, result, isVideo = true)
+            "retrieveLostCapture" -> retrieveLostCapture(result)
             else -> result.notImplemented()
         }
     }
@@ -634,6 +656,292 @@ class XueHuaFileOperationsPlugin :
         }
     }
 
+    // ---------------------------------------------------------------------
+    // Camera capture
+    // ---------------------------------------------------------------------
+
+    private fun capture(call: MethodCall, result: Result, isVideo: Boolean) {
+        val act = ensureActivity(result) ?: return
+        if (captureLauncher == null || cameraPermissionLauncher == null) {
+            result.error("unsupported", "Camera launchers are not available", null)
+            return
+        }
+        val file = try {
+            val dir = File(act.cacheDir, CaptureImageResizer.CAPTURE_DIR).apply { mkdirs() }
+            File.createTempFile(UUID.randomUUID().toString(), if (isVideo) ".mp4" else ".jpg", dir)
+        } catch (e: Exception) {
+            result.error("io_error", e.message, null)
+            return
+        }
+        val request = CaptureRequest(
+            isVideo = isVideo,
+            file = file,
+            preferredCamera = call.argument<String>("preferredCamera") ?: "rear",
+            maxDurationSeconds = call.argument<Int>("maxDurationSeconds"),
+            maxWidth = call.argument<Number>("maxWidth")?.toDouble(),
+            maxHeight = call.argument<Number>("maxHeight")?.toDouble(),
+            imageQuality = call.argument<Int>("imageQuality"),
+            withData = call.argument<Boolean>("withData") ?: false,
+        )
+        pendingResult = result
+        pendingCapture = request
+
+        // Like the platform camera contract: ask for CAMERA only when the app
+        // manifest declares it, otherwise the camera app would fail.
+        if (isCameraPermissionDeclared(act) &&
+            ContextCompat.checkSelfPermission(act, Manifest.permission.CAMERA) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            cameraPermissionLauncher?.launch(Manifest.permission.CAMERA)
+            return
+        }
+        launchCamera(act, request)
+    }
+
+    private fun isCameraPermissionDeclared(ctx: Context): Boolean {
+        return try {
+            val info = if (Build.VERSION.SDK_INT >= 33) {
+                ctx.packageManager.getPackageInfo(
+                    ctx.packageName,
+                    PackageManager.PackageInfoFlags.of(PackageManager.GET_PERMISSIONS.toLong())
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                ctx.packageManager.getPackageInfo(ctx.packageName, PackageManager.GET_PERMISSIONS)
+            }
+            info.requestedPermissions?.contains(Manifest.permission.CAMERA) == true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun onCameraPermissionResult(granted: Boolean) {
+        val request = pendingCapture
+        val act = activity
+        if (request == null || pendingResult == null) return
+        if (!granted) {
+            failCapture("permission_denied", "The user did not allow camera access.")
+            return
+        }
+        if (act == null) {
+            failCapture("unknown", "Activity is not available")
+            return
+        }
+        launchCamera(act, request)
+    }
+
+    private fun launchCamera(act: Activity, request: CaptureRequest) {
+        val intent = Intent(
+            if (request.isVideo) MediaStore.ACTION_VIDEO_CAPTURE else MediaStore.ACTION_IMAGE_CAPTURE
+        )
+        if (request.preferredCamera == "front") {
+            intent.putExtra("android.intent.extras.CAMERA_FACING", CameraCharacteristics.LENS_FACING_FRONT)
+            intent.putExtra("android.intent.extras.LENS_FACING_FRONT", 1)
+            intent.putExtra("android.intent.extra.USE_FRONT_CAMERA", true)
+        } else {
+            intent.putExtra("android.intent.extras.CAMERA_FACING", CameraCharacteristics.LENS_FACING_BACK)
+        }
+        request.maxDurationSeconds?.let {
+            if (request.isVideo) intent.putExtra(MediaStore.EXTRA_DURATION_LIMIT, it)
+        }
+        val uri = try {
+            FileProvider.getUriForFile(
+                act,
+                "${act.packageName}.xue_hua_file_operations.fileprovider",
+                request.file
+            )
+        } catch (e: IllegalArgumentException) {
+            failCapture("io_error", "Unable to share capture file via FileProvider: ${e.message}")
+            return
+        }
+        intent.putExtra(MediaStore.EXTRA_OUTPUT, uri)
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        grantCameraUriPermissions(act, intent, uri)
+        saveCaptureState(act, request)
+        try {
+            captureLauncher?.launch(intent)
+        } catch (_: ActivityNotFoundException) {
+            failCapture("unsupported", "No camera app is available on this device.")
+        }
+    }
+
+    @Suppress("QueryPermissionsNeeded")
+    private fun grantCameraUriPermissions(act: Activity, intent: Intent, uri: Uri) {
+        val handlers: List<ResolveInfo> = try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                act.packageManager.queryIntentActivities(
+                    intent,
+                    PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_DEFAULT_ONLY.toLong())
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                act.packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+        for (info in handlers) {
+            act.grantUriPermission(
+                info.activityInfo.packageName,
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        }
+    }
+
+    private fun failCapture(code: String, message: String?) {
+        val result = pendingResult
+        val request = pendingCapture
+        clearPending()
+        request?.file?.delete()
+        clearCaptureState()
+        result?.error(code, message, null)
+    }
+
+    private fun onCaptureResult(resultCode: Int) {
+        val result = pendingResult
+        val request = pendingCapture
+        if (result == null || request == null) {
+            // The Activity was recreated while the camera was open: remember the
+            // outcome so retrieveLostCapture() can hand it over.
+            markLostCaptureFinished(resultCode == Activity.RESULT_OK)
+            return
+        }
+        val ctx: Context? = activity ?: applicationContext
+        clearPending()
+        clearCaptureState()
+        if (resultCode != Activity.RESULT_OK) {
+            request.file.delete()
+            result.success(null)
+            return
+        }
+        if (ctx == null) {
+            result.error("unknown", "Context is not available", null)
+            return
+        }
+        thread {
+            try {
+                val map = captureToMap(ctx, request)
+                mainHandler.post { result.success(mapOf("file" to map)) }
+            } catch (e: Exception) {
+                mainHandler.post { result.error("io_error", e.message, null) }
+            }
+        }
+    }
+
+    private fun captureToMap(ctx: Context, request: CaptureRequest): Map<String, Any?> {
+        if (!request.file.exists() || request.file.length() == 0L) {
+            throw FileNotFoundException("The camera did not produce a file")
+        }
+        val path = if (request.isVideo) {
+            request.file.path
+        } else {
+            CaptureImageResizer(ctx).resizeIfNeeded(
+                request.file.path,
+                request.maxWidth,
+                request.maxHeight,
+                request.imageQuality
+            )
+        }
+        return fileToMap(File(path), request.withData)
+    }
+
+    private fun fileToMap(file: File, withData: Boolean): Map<String, Any?> {
+        val bytes = if (withData) file.readBytes() else null
+        return mapOf(
+            "name" to file.name,
+            "size" to (bytes?.size?.toLong() ?: file.length()),
+            "path" to file.absolutePath,
+            "bytes" to bytes,
+            "identifier" to file.toUri().toString()
+        )
+    }
+
+    // Lost-capture bookkeeping (shared preferences, survives process death).
+
+    private fun capturePrefs() =
+        (activity ?: applicationContext)?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    private fun saveCaptureState(ctx: Context, request: CaptureRequest) {
+        ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+            putString(KEY_CAPTURE_PATH, request.file.absolutePath)
+            putBoolean(KEY_CAPTURE_IS_VIDEO, request.isVideo)
+            putBoolean(KEY_CAPTURE_FINISHED, false)
+            if (request.maxWidth != null) putString(KEY_CAPTURE_MAX_WIDTH, request.maxWidth.toString())
+            else remove(KEY_CAPTURE_MAX_WIDTH)
+            if (request.maxHeight != null) putString(KEY_CAPTURE_MAX_HEIGHT, request.maxHeight.toString())
+            else remove(KEY_CAPTURE_MAX_HEIGHT)
+            if (request.imageQuality != null) putInt(KEY_CAPTURE_QUALITY, request.imageQuality)
+            else remove(KEY_CAPTURE_QUALITY)
+        }
+    }
+
+    private fun clearCaptureState() {
+        capturePrefs()?.edit {
+            remove(KEY_CAPTURE_PATH)
+            remove(KEY_CAPTURE_IS_VIDEO)
+            remove(KEY_CAPTURE_FINISHED)
+            remove(KEY_CAPTURE_MAX_WIDTH)
+            remove(KEY_CAPTURE_MAX_HEIGHT)
+            remove(KEY_CAPTURE_QUALITY)
+        }
+    }
+
+    private fun markLostCaptureFinished(success: Boolean) {
+        val prefs = capturePrefs() ?: return
+        if (prefs.getString(KEY_CAPTURE_PATH, null) == null) return
+        if (success) {
+            prefs.edit { putBoolean(KEY_CAPTURE_FINISHED, true) }
+        } else {
+            prefs.getString(KEY_CAPTURE_PATH, null)?.let { File(it).delete() }
+            clearCaptureState()
+        }
+    }
+
+    private fun retrieveLostCapture(result: Result) {
+        val ctx: Context? = activity ?: applicationContext
+        val prefs = capturePrefs()
+        val path = prefs?.getString(KEY_CAPTURE_PATH, null)
+        if (ctx == null || prefs == null || path == null ||
+            !prefs.getBoolean(KEY_CAPTURE_FINISHED, false)
+        ) {
+            result.success(null)
+            return
+        }
+        val isVideo = prefs.getBoolean(KEY_CAPTURE_IS_VIDEO, false)
+        val maxWidth = prefs.getString(KEY_CAPTURE_MAX_WIDTH, null)?.toDoubleOrNull()
+        val maxHeight = prefs.getString(KEY_CAPTURE_MAX_HEIGHT, null)?.toDoubleOrNull()
+        val quality = if (prefs.contains(KEY_CAPTURE_QUALITY)) prefs.getInt(KEY_CAPTURE_QUALITY, 100) else null
+        clearCaptureState()
+        thread {
+            try {
+                val request = CaptureRequest(
+                    isVideo, File(path), "rear", null, maxWidth, maxHeight, quality, false
+                )
+                val map = captureToMap(ctx, request)
+                mainHandler.post {
+                    result.success(
+                        mapOf(
+                            "files" to listOf(map),
+                            "type" to if (isVideo) "video" else "image"
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                mainHandler.post {
+                    result.success(
+                        mapOf(
+                            "files" to emptyList<Any>(),
+                            "type" to if (isVideo) "video" else "image",
+                            "errorCode" to "io_error",
+                            "errorMessage" to e.message
+                        )
+                    )
+                }
+            }
+        }
+    }
+
     private fun onOpenMultipleDocumentsResult(uris: List<Uri>) {
         val result = pendingResult ?: return
         val withData = pendingWithData
@@ -805,6 +1113,7 @@ class XueHuaFileOperationsPlugin :
         pendingGalleryRequest = null
         pendingPermissionOnly = false
         pendingSingleAsMultiple = false
+        pendingCapture = null
     }
 
     private fun registerLaunchers(componentActivity: ComponentActivity) {
@@ -838,6 +1147,14 @@ class XueHuaFileOperationsPlugin :
             "xue_hua_file_operations/pick_multiple_visual_media",
             ActivityResultContracts.PickMultipleVisualMedia()
         ) { uris -> onOpenMultipleDocumentsResult(uris) }
+        captureLauncher = registry.register(
+            "xue_hua_file_operations/capture",
+            ActivityResultContracts.StartActivityForResult()
+        ) { activityResult -> onCaptureResult(activityResult.resultCode) }
+        cameraPermissionLauncher = registry.register(
+            "xue_hua_file_operations/camera_permission",
+            ActivityResultContracts.RequestPermission()
+        ) { granted -> onCameraPermissionResult(granted) }
     }
 
     private fun unregisterLaunchers() {
@@ -848,6 +1165,8 @@ class XueHuaFileOperationsPlugin :
         writeStoragePermissionLauncher?.unregister()
         pickVisualMediaLauncher?.unregister()
         pickMultipleVisualMediaLauncher?.unregister()
+        captureLauncher?.unregister()
+        cameraPermissionLauncher?.unregister()
         openDocumentLauncher = null
         openMultipleDocumentsLauncher = null
         openDocumentTreeLauncher = null
@@ -855,11 +1174,15 @@ class XueHuaFileOperationsPlugin :
         writeStoragePermissionLauncher = null
         pickVisualMediaLauncher = null
         pickMultipleVisualMediaLauncher = null
+        captureLauncher = null
+        cameraPermissionLauncher = null
     }
 
     /** Fails any in-flight operation so the Dart Future never hangs. */
     private fun failPendingOnDetach() {
         val result = pendingResult ?: return
+        // A capture in flight keeps its saved state so retrieveLostCapture()
+        // can still recover the photo / video after the Activity restarts.
         clearPending()
         result.error("cancelled", "Activity was detached during the operation", null)
     }
@@ -896,5 +1219,11 @@ class XueHuaFileOperationsPlugin :
     companion object {
         private const val PREFS_NAME = "xue_hua_file_operations"
         private const val KEY_WRITE_STORAGE_REQUESTED = "write_external_storage_requested"
+        private const val KEY_CAPTURE_PATH = "capture_path"
+        private const val KEY_CAPTURE_IS_VIDEO = "capture_is_video"
+        private const val KEY_CAPTURE_FINISHED = "capture_finished"
+        private const val KEY_CAPTURE_MAX_WIDTH = "capture_max_width"
+        private const val KEY_CAPTURE_MAX_HEIGHT = "capture_max_height"
+        private const val KEY_CAPTURE_QUALITY = "capture_image_quality"
     }
 }

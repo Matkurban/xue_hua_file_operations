@@ -9,6 +9,8 @@ import 'package:xue_hua_file_operations/xue_hua_file_operations_platform_interfa
 class MockXueHuaFileOperationsPlatform
     with MockPlatformInterfaceMixin
     implements XueHuaFileOperationsPlatform {
+  Map<String, Object?>? lastCapture;
+
   @override
   Future<PlatformFile?> pickFile({
     bool withData = false,
@@ -40,6 +42,48 @@ class MockXueHuaFileOperationsPlatform
       const PlatformFile(name: 'b.txt', size: 1, path: '/tmp/b.txt'),
     ];
   }
+
+  @override
+  Future<PlatformFile?> capturePhoto({
+    CameraFacing preferredCamera = CameraFacing.rear,
+    double? maxWidth,
+    double? maxHeight,
+    int? imageQuality,
+    bool withData = false,
+  }) async {
+    lastCapture = {
+      'preferredCamera': preferredCamera,
+      'maxWidth': maxWidth,
+      'maxHeight': maxHeight,
+      'imageQuality': imageQuality,
+    };
+    return const PlatformFile(
+      name: 'photo.jpg',
+      size: 10,
+      path: '/tmp/photo.jpg',
+    );
+  }
+
+  @override
+  Future<PlatformFile?> captureVideo({
+    CameraFacing preferredCamera = CameraFacing.rear,
+    Duration? maxDuration,
+    bool withData = false,
+  }) async {
+    lastCapture = {
+      'preferredCamera': preferredCamera,
+      'maxDuration': maxDuration,
+    };
+    return const PlatformFile(
+      name: 'clip.mp4',
+      size: 20,
+      path: '/tmp/clip.mp4',
+    );
+  }
+
+  @override
+  Future<LostCaptureResult> retrieveLostCapture() async =>
+      LostCaptureResult.empty;
 
   @override
   Future<DirectoryResult?> pickDirectory({String? dialogTitle}) async {
@@ -136,6 +180,73 @@ void main() {
       'bytes': null,
     });
     expect(metaOnly.hasBytes, isFalse);
+  });
+
+  group('camera capture', () {
+    late MockXueHuaFileOperationsPlatform mock;
+    setUp(() {
+      mock = MockXueHuaFileOperationsPlatform();
+      XueHuaFileOperationsPlatform.instance = mock;
+    });
+
+    test('capturePhoto delegates options to platform', () async {
+      final file = await XueHuaFileOperations.instance.capturePhoto(
+        preferredCamera: CameraFacing.front,
+        maxWidth: 800,
+        maxHeight: 600,
+        imageQuality: 80,
+      );
+      expect(file?.name, 'photo.jpg');
+      expect(mock.lastCapture, {
+        'preferredCamera': CameraFacing.front,
+        'maxWidth': 800.0,
+        'maxHeight': 600.0,
+        'imageQuality': 80,
+      });
+    });
+
+    test('captureVideo delegates maxDuration to platform', () async {
+      final file = await XueHuaFileOperations.instance.captureVideo(
+        maxDuration: const Duration(seconds: 15),
+      );
+      expect(file?.name, 'clip.mp4');
+      expect(mock.lastCapture?['maxDuration'], const Duration(seconds: 15));
+      expect(mock.lastCapture?['preferredCamera'], CameraFacing.rear);
+    });
+
+    test('capturePhoto rejects invalid arguments', () {
+      for (final call in <Future<Object?> Function()>[
+        () => XueHuaFileOperations.instance.capturePhoto(maxWidth: -1),
+        () => XueHuaFileOperations.instance.capturePhoto(maxHeight: -1),
+        () => XueHuaFileOperations.instance.capturePhoto(imageQuality: 101),
+        () => XueHuaFileOperations.instance.capturePhoto(imageQuality: -1),
+      ]) {
+        expect(
+          call,
+          throwsA(
+            isA<FileOperationsException>().having(
+              (e) => e.code,
+              'code',
+              ErrorCode.invalidArgs,
+            ),
+          ),
+        );
+      }
+    });
+
+    test('captureVideo rejects negative maxDuration', () {
+      expect(
+        () => XueHuaFileOperations.instance.captureVideo(
+          maxDuration: const Duration(seconds: -1),
+        ),
+        throwsA(isA<FileOperationsException>()),
+      );
+    });
+
+    test('retrieveLostCapture returns the empty result', () async {
+      final lost = await XueHuaFileOperations.instance.retrieveLostCapture();
+      expect(lost.isEmpty, isTrue);
+    });
   });
 
   test('pickFile delegates to platform', () async {

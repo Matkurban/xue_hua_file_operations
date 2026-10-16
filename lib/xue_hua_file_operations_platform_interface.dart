@@ -2,10 +2,12 @@ import 'dart:typed_data';
 
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
+import 'src/models/camera_facing.dart';
 import 'src/models/directory_result.dart';
 import 'src/models/file_type.dart';
 import 'src/models/gallery_media_type.dart';
 import 'src/models/gallery_permission_status.dart';
+import 'src/models/lost_capture_result.dart';
 import 'src/models/platform_file.dart';
 import 'src/models/save_file_result.dart';
 import 'src/models/save_to_gallery_result.dart';
@@ -45,6 +47,28 @@ abstract class XueHuaFileOperationsPlatform extends PlatformInterface {
     List<String>? allowedMimeTypes,
   }) {
     throw UnimplementedError('pickFiles() has not been implemented.');
+  }
+
+  Future<PlatformFile?> capturePhoto({
+    CameraFacing preferredCamera = CameraFacing.rear,
+    double? maxWidth,
+    double? maxHeight,
+    int? imageQuality,
+    bool withData = false,
+  }) {
+    throw UnimplementedError('capturePhoto() has not been implemented.');
+  }
+
+  Future<PlatformFile?> captureVideo({
+    CameraFacing preferredCamera = CameraFacing.rear,
+    Duration? maxDuration,
+    bool withData = false,
+  }) {
+    throw UnimplementedError('captureVideo() has not been implemented.');
+  }
+
+  Future<LostCaptureResult> retrieveLostCapture() {
+    throw UnimplementedError('retrieveLostCapture() has not been implemented.');
   }
 
   Future<DirectoryResult?> pickDirectory({String? dialogTitle}) {
