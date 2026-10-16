@@ -8,7 +8,7 @@ helper next to `flutter drive`:
 
 It taps "Allow" on runtime permission dialogs (no `pm grant`: that would
 kill the app under test) and keeps watching the screen. When the AOSP Camera2 app (com.android.camera2) shows up it taps
-"Shutter" (photo: once; video: once to start, again after ~3 s to stop) and
+"Shutter" (photo: once; video: once to start, again after ~2 s to stop) and
 then the review "Done" button. Stops after 20 minutes or on Ctrl-C.
 """
 import re, subprocess, sys, time
@@ -51,12 +51,6 @@ def tap(point, what):
     sh('shell', 'input', 'tap', str(point[0]), str(point[1]))
 
 
-def action():
-    out = sh('shell', 'dumpsys', 'activity', 'top')
-    m = re.search(r'act=android\.media\.action\.(\w+)', out)
-    return m.group(1) if m else ''
-
-
 deadline = time.time() + 20 * 60
 shutter_taps = 0
 while time.time() < deadline:
@@ -91,8 +85,8 @@ while time.time() < deadline:
         time.sleep(1.5)  # let the preview warm up
         tap(shutter, 'Shutter')
         shutter_taps = 1
-        if 'VIDEO' in action():
-            time.sleep(3)
+        if 'VideoCamera' in current:  # VIDEO_CAPTURE intent
+            time.sleep(2)
             tap(shutter, 'Shutter (stop)')
         time.sleep(2)
         continue

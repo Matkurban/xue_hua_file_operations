@@ -205,7 +205,7 @@ final class CameraCapture: NSObject, AVCapturePhotoCaptureDelegate,
     /// Test hook for UI tests (flutter_driver cannot reach the native
     /// sheet): when the process environment has `XUE_HUA_CAMERA_TEST_AUTO=1`
     /// the "Take Photo" / "Record" button is pressed ~1.5 s after the preview
-    /// starts and a recording is stopped ~2 s later. The real camera is still
+    /// starts and a recording is stopped 2 s after it actually started. The real camera is still
     /// used. Without the variable nothing happens.
     private func scheduleTestAutomation() {
         guard ProcessInfo.processInfo.environment["XUE_HUA_CAMERA_TEST_AUTO"] == "1" else {
@@ -213,12 +213,23 @@ final class CameraCapture: NSObject, AVCapturePhotoCaptureDelegate,
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             guard let self = self, self.pendingResult != nil else { return }
+            // For videos the stop is scheduled once recording has really
+            // started (`didStartRecordingTo`), so the clip is ~2 s long.
             self.primaryTapped()
-            guard self.request?.isVideo == true else { return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                guard let self = self, self.movieOutput?.isRecording == true else { return }
-                self.stopTapped()
-            }
+        }
+    }
+
+    func fileOutput(
+        _ output: AVCaptureFileOutput,
+        didStartRecordingTo fileURL: URL,
+        from connections: [AVCaptureConnection]
+    ) {
+        guard ProcessInfo.processInfo.environment["XUE_HUA_CAMERA_TEST_AUTO"] == "1" else {
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            guard let self = self, self.movieOutput?.isRecording == true else { return }
+            self.stopTapped()
         }
     }
 

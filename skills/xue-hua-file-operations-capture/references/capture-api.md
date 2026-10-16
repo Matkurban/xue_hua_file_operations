@@ -70,3 +70,7 @@ Android only; other platforms return `LostCaptureResult.empty`.
 | macOS | AVFoundation preview sheet; JPEG / `.mov`; entitlements `device.camera` (+ `device.audio-input`) and `NSCameraUsageDescription` (+ `NSMicrophoneUsageDescription`) |
 | Windows | Media Foundation preview window; JPEG / H.264+AAC MP4; desktop camera privacy setting must allow desktop apps |
 | Linux | GStreamer + GTK preview dialog; JPEG / MP4 (H.264) or WebM; build needs GStreamer dev packages, runtime needs a V4L2 camera (`ErrorCode.unsupported` otherwise) |
+
+## UI-test hooks
+
+The native camera UI is outside Flutter's widget tree. Set `XUE_HUA_CAMERA_TEST_AUTO=1` in the app's environment to auto-press the shutter / Record (and stop recordings after 2 s) on macOS, iOS and Linux; Linux additionally supports `XUE_HUA_CAMERA_TEST_SOURCE=videotestsrc` to run without a camera. Without the variables nothing happens.

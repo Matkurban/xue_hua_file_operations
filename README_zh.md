@@ -189,6 +189,8 @@ iOS 模拟器没有相机（返回 `ErrorCode.unsupported`），请使用真机�
 
 拒绝相机权限抛出 `ErrorCode.permissionDenied`（系统设置 → 隐私与安全性 → 相机）；没有摄像头抛出 `ErrorCode.unsupported`。
 
+**UI 测试钩子（macOS 与 iOS）：** 原生相机界面不在 Flutter 控件树内，`flutter_driver` 无法点击。以环境变量 `XUE_HUA_CAMERA_TEST_AUTO=1` 启动应用后，插件会在相机出现约 1.5 秒后自动按下快门 / 录制，并在录制真正开始 2 秒后停止。仍使用真实摄像头；未设置该变量时不会有任何动作。macOS 上 `flutter drive -d macos` 会传递该变量；iOS 模拟器请使用 `SIMCTL_CHILD_XUE_HUA_CAMERA_TEST_AUTO=1`（注意：iOS 模拟器没有可用的相机管线，真实拍摄只能在真机上测试）。参见 `example/test_driver/`。
+
 与 iOS 相同：系统只弹一次授权框。macOS 始终申请 PhotoKit `readWrite`（忽略 `forAlbum`）：系统设置 → 隐私与安全性 → 照片只列出读/写客户端。`addOnly` 不会出现在该列表，且可能在从未弹框时就返回 `.denied`。
 
 **启动方式（TCC 责任进程）：** macOS 会把照片授权框记到父进程上。若从 Cursor / VS Code 执行 `flutter run -d macos`，系统可能静默拒绝，并且 **不会** 把本应用列在「照片」里。请用系统「终端」测试，或先构建再打开 `.app`：
