@@ -453,6 +453,7 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
                     key: ValueKey('file_name_${entry.key}'),
                   ),
                   subtitle: Text(
+                    key: ValueKey('file_info_${entry.key}'),
                     'size=${file.size}\n'
                     'path=${file.path ?? "(null)"}\n'
                     'hasBytes=${file.hasBytes}\n'

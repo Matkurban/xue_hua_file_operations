@@ -115,7 +115,30 @@ final class CameraCapture: NSObject, UIImagePickerControllerDelegate,
             picker.cameraDevice = device
         }
         picker.delegate = self
-        presenter.present(picker, animated: true)
+        presenter.present(picker, animated: true) { [weak self, weak picker] in
+            self?.runTestAutomation(picker)
+        }
+    }
+
+    /// Test hook for UI tests (the system camera UI is outside Flutter's
+    /// widget tree): with `XUE_HUA_CAMERA_TEST_AUTO=1` in the process
+    /// environment the shutter is triggered ~1.5 s after the camera appears
+    /// (`takePicture()` / `startVideoCapture()`, recording is stopped ~2 s
+    /// later). Without the variable nothing happens.
+    private func runTestAutomation(_ picker: UIImagePickerController?) {
+        guard ProcessInfo.processInfo.environment["XUE_HUA_CAMERA_TEST_AUTO"] == "1",
+              let picker = picker, let request = request else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak picker] in
+            guard let picker = picker else { return }
+            if request.isVideo {
+                _ = picker.startVideoCapture()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak picker] in
+                    picker?.stopVideoCapture()
+                }
+            } else {
+                picker.takePicture()
+            }
+        }
     }
 
     private func finish(_ value: Any?) {
