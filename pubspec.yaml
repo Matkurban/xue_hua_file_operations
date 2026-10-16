@@ -8,7 +8,6 @@ topics:
   - file-picker
   - file-saver
   - camera
-  - document-picker
   - desktop
 
 environment:
