@@ -264,11 +264,37 @@ class CaptureSession {
     // The valve must stay open: a closed valve swallows the EOS event too.
     gst_element_send_event(pipeline_, gst_event_new_eos());
     GstBus* bus = gst_element_get_bus(pipeline_);
-    GstMessage* message = gst_bus_timed_pop_filtered(
-        bus, 30 * GST_SECOND,
-        static_cast<GstMessageType>(GST_MESSAGE_EOS | GST_MESSAGE_ERROR));
-    bool ok = message != nullptr && GST_MESSAGE_TYPE(message) == GST_MESSAGE_EOS;
-    if (message != nullptr) gst_message_unref(message);
+    bool ok = false;
+    const gint64 deadline = g_get_monotonic_time() + 30 * G_USEC_PER_SEC;
+    while (g_get_monotonic_time() < deadline) {
+      // An appsink only posts its EOS message after the application pulled
+      // the last sample, so keep draining the preview branch while waiting.
+      if (preview_sink_ != nullptr) {
+        while (GstSample* sample = gst_app_sink_try_pull_sample(
+                   GST_APP_SINK(preview_sink_), 0)) {
+          gst_sample_unref(sample);
+        }
+      }
+      GstMessage* message = gst_bus_timed_pop_filtered(
+          bus, 20 * GST_MSECOND,
+          static_cast<GstMessageType>(GST_MESSAGE_EOS | GST_MESSAGE_ERROR));
+      if (message == nullptr) continue;
+      if (GST_MESSAGE_TYPE(message) == GST_MESSAGE_EOS) {
+        ok = true;
+      } else {
+        GError* error = nullptr;
+        gchar* debug = nullptr;
+        gst_message_parse_error(message, &error, &debug);
+        g_printerr("xue_hua_file_operations: GStreamer error while finalizing: %s (%s)\n",
+                   error != nullptr ? error->message : "?",
+                   debug != nullptr ? debug : "");
+        if (error != nullptr) g_error_free(error);
+        g_free(debug);
+      }
+      gst_message_unref(message);
+      if (ok) break;
+    }
+    if (!ok) g_printerr("xue_hua_file_operations: no EOS within 30 s\n");
     gst_object_unref(bus);
     return ok;
   }
