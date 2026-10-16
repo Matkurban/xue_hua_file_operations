@@ -87,7 +87,7 @@ enum ErrorCode {
 | `ErrorCode.tooManyFiles` | `too_many_files` | Selection exceeded `maxFiles`. |
 | `ErrorCode.notFound` | `not_found` | File or resource not found. |
 | `ErrorCode.ioError` | `io_error` | I/O failure while reading or writing. |
-| `ErrorCode.unsupported` | `unsupported` | Operation not supported on this platform / configuration (Web `sourcePath`, Web `openFile` with only `path`, `capturePhoto` / `captureVideo` on Linux / macOS / Windows or on a device without a camera app). |
+| `ErrorCode.unsupported` | `unsupported` | Operation not supported on this platform / configuration (Web `sourcePath`, Web `openFile` with only `path`, `capturePhoto` / `captureVideo` on a computer / device without a camera (or camera app), or a Linux build without GStreamer). |
 | `ErrorCode.unknown` | `unknown` | Unexpected / unclassified error, including a null `saveToGallery` native result. |
 
 ### `final String code`

@@ -166,5 +166,7 @@ No app-level permissions. A user gesture is typically required to open the picke
 | --- | --- |
 | Android | Host `Activity` extends `FlutterFragmentActivity`. Optional `<uses-permission android:name="android.permission.CAMERA" />` (plugin requests it at runtime when declared) and `<uses-feature android:name="android.hardware.camera" android:required="false" />`. No host FileProvider needed. |
 | iOS | `NSCameraUsageDescription`; `NSMicrophoneUsageDescription` for video. Camera is unavailable in the Simulator (`ErrorCode.unsupported`). |
-| macOS / Windows / Linux | Not supported: `ErrorCode.unsupported`. No setup. |
+| macOS | Entitlements `com.apple.security.device.camera` (+ `device.audio-input` for video) and `NSCameraUsageDescription` (+ `NSMicrophoneUsageDescription`). |
+| Windows | No manifest entry; Settings → Privacy & security → Camera must allow desktop apps. |
+| Linux | Build packages: GStreamer dev (`libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev` / `gstreamer1-devel gstreamer1-plugins-base-devel` / `gstreamer gst-plugins-base`); runtime plugins good + ugly; V4L2 camera. Without GStreamer at build time capture throws `ErrorCode.unsupported`. |
 | Web | Mobile browsers open the camera via the `capture` attribute; desktop browsers show a file chooser. |

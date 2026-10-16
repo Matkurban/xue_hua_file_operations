@@ -67,4 +67,6 @@ Android only; other platforms return `LostCaptureResult.empty`.
 | Android | `ACTION_IMAGE_CAPTURE` / `ACTION_VIDEO_CAPTURE` via the plugin `FileProvider`; `CAMERA` requested when declared in the manifest |
 | iOS | `UIImagePickerController` camera; needs `NSCameraUsageDescription` (+ `NSMicrophoneUsageDescription` for video) |
 | Web | `<input type="file" capture>`; mobile browsers only, canvas resize |
-| Linux / macOS / Windows | `ErrorCode.unsupported` |
+| macOS | AVFoundation preview sheet; JPEG / `.mov`; entitlements `device.camera` (+ `device.audio-input`) and `NSCameraUsageDescription` (+ `NSMicrophoneUsageDescription`) |
+| Windows | Media Foundation preview window; JPEG / H.264+AAC MP4; desktop camera privacy setting must allow desktop apps |
+| Linux | GStreamer + GTK preview dialog; JPEG / MP4 (H.264) or WebM; build needs GStreamer dev packages, runtime needs a V4L2 camera (`ErrorCode.unsupported` otherwise) |

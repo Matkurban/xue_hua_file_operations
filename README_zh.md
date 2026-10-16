@@ -169,7 +169,25 @@ iOS 模拟器没有相机（返回 `ErrorCode.unsupported`），请使用真机�
 
 若缺少 Photos entitlement，PhotoKit 常会立刻返回 `.denied` 且永不弹框。
 
-**相机：** macOS 不支持 `capturePhoto` / `captureVideo`，调用会抛出 `ErrorCode.unsupported`，无需相机 entitlement 或用途描述。
+**相机：** `capturePhoto` / `captureVideo` 使用 AVFoundation，弹出带实时预览以及 *拍照* / *录制* / *停止* / *取消* 按钮的面板。`preferredCamera: front` 选择内置摄像头，`rear` 优先选择外接摄像头；输出 JPEG / QuickTime `.mov`。启用 App Sandbox 时，请在 `DebugProfile.entitlements` 与 `Release.entitlements` 中加入：
+
+```xml
+<key>com.apple.security.device.camera</key>
+<true/>
+<key>com.apple.security.device.audio-input</key>
+<true/>
+```
+
+并在 `macos/Runner/Info.plist` 中加入用途描述（缺失时插件返回 `ErrorCode.invalidArgs`；未授权麦克风时仍可录像，只是没有声音）：
+
+```xml
+<key>NSCameraUsageDescription</key>
+<string>此应用使用相机拍照和录像。</string>
+<key>NSMicrophoneUsageDescription</key>
+<string>此应用录像时会录制声音。</string>
+```
+
+拒绝相机权限抛出 `ErrorCode.permissionDenied`（系统设置 → 隐私与安全性 → 相机）；没有摄像头抛出 `ErrorCode.unsupported`。
 
 与 iOS 相同：系统只弹一次授权框。macOS 始终申请 PhotoKit `readWrite`（忽略 `forAlbum`）：系统设置 → 隐私与安全性 → 照片只列出读/写客户端。`addOnly` 不会出现在该列表，且可能在从未弹框时就返回 `.denied`。
 
@@ -191,13 +209,21 @@ tccutil reset Photos com.your.bundle.id
 
 ### Windows
 
-**相机：** 不支持 `capturePhoto` / `captureVideo`，调用会抛出 `ErrorCode.unsupported`。
+**相机：** `capturePhoto` / `captureVideo` 会弹出原生预览窗口（Media Foundation capture engine），含 *拍照* / *录制* / *停止* / *取消* 按钮。照片为 JPEG，视频为 H.264 + AAC 的 MP4（没有麦克风时不录音）。`preferredCamera` 按设备名称优先选择内置（前置）或外接（后置）摄像头。桌面（Win32）应用无需 manifest 声明，但需在 Windows 设置 → 隐私和安全性 → 相机 中开启“允许桌面应用访问相机”，否则抛出 `ErrorCode.permissionDenied`；无摄像头抛出 `ErrorCode.unsupported`。（已按 Windows SDK 实现，尚未在真实 Windows 机器上验证。）
 
 **权限：** 无需额外权限。使用系统原生文件 / 文件夹对话框。`saveToGallery` 写入用户 Pictures 或 Videos 已知文件夹。无需为本插件添加额外清单配置。
 
 ### Linux
 
-**相机：** 不支持 `capturePhoto` / `captureVideo`，调用会抛出 `ErrorCode.unsupported`。
+**相机：** `capturePhoto` / `captureVideo` 会弹出由 GStreamer（`v4l2src`）驱动的 GTK 预览对话框。照片为 JPEG；视频为 MP4（`x264enc` 或 `openh264enc` 的 H.264，另需 *bad* 插件集中的 `h264parse` 以及 `mp4mux`），缺少 H.264 编码器 / 解析器时为 WebM（VP8）。构建需要 GStreamer 开发包（缺失时插件仍可构建，但相机方法抛出 `ErrorCode.unsupported`）；运行时需要 V4L2 摄像头（没有则 `ErrorCode.unsupported`；无法打开 `/dev/video*` 时 `ErrorCode.permissionDenied`，请将用户加入 `video` 组）。
+
+| 发行版        | 构建依赖                                               | 运行时插件（录像）                                      |
+| ------------- | ------------------------------------------------------ | ------------------------------------------------------- |
+| Ubuntu/Debian | `libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev` | `gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly` |
+| Fedora        | `gstreamer1-devel gstreamer1-plugins-base-devel`       | `gstreamer1-plugins-good gstreamer1-plugins-bad-free`（H.264 需 RPM Fusion `x264` / `openh264`）|
+| Arch          | `gstreamer gst-plugins-base`                           | `gst-plugins-good gst-plugins-bad gst-plugins-ugly`                   |
+
+无摄像头时测试：设置 `XUE_HUA_CAMERA_TEST_SOURCE=videotestsrc` 使用 GStreamer 测试图像作为摄像头，`XUE_HUA_CAMERA_TEST_AUTO=1` 自动按下快门 / 停止（示例的 `flutter_driver` 测试使用）。
 
 **权限：** 无需额外权限。使用系统原生文件 / 文件夹对话框。`saveToGallery` 写入 XDG Pictures 或 Videos（Linux 没有系统相册 API）。无需为本插件添加额外桌面权限。
 
@@ -319,7 +345,7 @@ Future<List<PlatformFile>?> pickFiles({
 
 ### `capturePhoto`
 
-使用系统相机拍照。用户取消时返回 `null`。
+使用系统 / 设备相机拍照。用户取消时返回 `null`。
 
 ```dart
 Future<PlatformFile?> capturePhoto({
@@ -341,7 +367,7 @@ Future<PlatformFile?> capturePhoto({
 
 未传 `maxWidth` / `maxHeight` / `imageQuality` 时返回未处理的原始照片。
 
-**错误：** `ErrorCode.permissionDenied`（拒绝相机权限）、`ErrorCode.unsupported`（无相机 / Linux / macOS / Windows）、`ErrorCode.invalidArgs`（参数非法，或缺少 iOS `Info.plist` 键）、`ErrorCode.ioError`。
+**错误：** `ErrorCode.permissionDenied`（拒绝相机权限）、`ErrorCode.unsupported`（无相机，或未安装 GStreamer 的 Linux 构建）、`ErrorCode.invalidArgs`（参数非法，或缺少 iOS `Info.plist` 键）、`ErrorCode.ioError`。
 
 ### `captureVideo`
 

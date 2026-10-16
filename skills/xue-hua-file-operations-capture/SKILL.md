@@ -12,7 +12,7 @@ description: >-
 
 * Use `XueHuaFileOperations.instance`.
 * Treat user cancel as `null`. Do not catch `ErrorCode.cancelled` for cancel.
-* Catch `FileOperationsException`: `ErrorCode.permissionDenied` (camera refused), `ErrorCode.unsupported` (no camera app, or Linux / macOS / Windows), `ErrorCode.invalidArgs`.
+* Catch `FileOperationsException`: `ErrorCode.permissionDenied` (camera refused), `ErrorCode.unsupported` (no camera / camera app, or a Linux build without GStreamer), `ErrorCode.invalidArgs`.
 * `maxWidth` / `maxHeight` must be `>= 0`, `imageQuality` must be 0-100, `maxDuration` must not be negative; otherwise `ErrorCode.invalidArgs` is thrown before the camera opens.
 * `maxDuration` is best effort (ignored by some Android camera apps and by browsers).
 * Android: host `Activity` must extend `FlutterFragmentActivity`; declare `android.permission.CAMERA` in the app manifest only if the app wants the plugin to request it.

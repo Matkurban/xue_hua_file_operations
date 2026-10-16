@@ -19,6 +19,8 @@ set(PLUGIN_NAME "xue_hua_file_operations_plugin")
 # Any new source files that you add to the plugin should be added here.
 list(APPEND PLUGIN_SOURCES
   "xue_hua_file_operations_plugin.cpp"
+  "camera_capture.cpp"
+  "camera_capture.h"
   "xue_hua_file_operations_plugin.h"
 )
 
@@ -48,6 +50,9 @@ target_include_directories(${PLUGIN_NAME} INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(${PLUGIN_NAME} PRIVATE flutter flutter_wrapper_plugin)
 target_link_libraries(${PLUGIN_NAME} PRIVATE ole32 shell32 uuid)
+# Camera capture: Media Foundation capture engine + WIC for JPEG post-processing.
+target_link_libraries(${PLUGIN_NAME} PRIVATE mfplat mf mfuuid mfreadwrite strmiids
+  windowscodecs propsys oleaut32 user32)
 
 # List of absolute paths to libraries that should be bundled with the plugin.
 # This list could contain prebuilt libraries, or libraries created by an
@@ -88,6 +93,8 @@ add_executable(${TEST_RUNNER}
 apply_standard_settings(${TEST_RUNNER})
 target_include_directories(${TEST_RUNNER} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(${TEST_RUNNER} PRIVATE flutter_wrapper_plugin)
+target_link_libraries(${TEST_RUNNER} PRIVATE ole32 shell32 uuid mfplat mf mfuuid
+  mfreadwrite strmiids windowscodecs propsys oleaut32 user32)
 target_link_libraries(${TEST_RUNNER} PRIVATE gtest_main gmock)
 # flutter_wrapper_plugin has link dependencies on the Flutter DLL.
 add_custom_command(TARGET ${TEST_RUNNER} POST_BUILD

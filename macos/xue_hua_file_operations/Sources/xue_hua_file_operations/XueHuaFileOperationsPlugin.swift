@@ -3,6 +3,8 @@ import FlutterMacOS
 import UniformTypeIdentifiers
 
 public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin {
+    private let cameraCapture = CameraCapture()
+
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(
             name: "xue_hua_file_operations",
@@ -32,12 +34,10 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin {
             openFile(call: call, result: result)
         case "openAppSettings":
             openAppSettings(result: result)
-        case "capturePhoto", "captureVideo":
-            result(FlutterError(
-                code: "unsupported",
-                message: "Camera capture is not supported on macOS",
-                details: nil
-            ))
+        case "capturePhoto":
+            cameraCapture.capture(call: call, result: result, isVideo: false)
+        case "captureVideo":
+            cameraCapture.capture(call: call, result: result, isVideo: true)
         case "retrieveLostCapture":
             result(nil)
         default:

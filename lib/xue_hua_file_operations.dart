@@ -95,8 +95,13 @@ class XueHuaFileOperations {
   /// `NSCameraUsageDescription`. On Web it opens the browser capture UI
   /// (mobile browsers only; desktop browsers show a file chooser).
   ///
-  /// Linux, macOS and Windows have no camera capture and throw
-  /// [ErrorCode.unsupported].
+  /// macOS, Windows and Linux open a native preview window with the
+  /// computer's camera (AVFoundation, Media Foundation and GStreamer
+  /// respectively); [preferredCamera] picks the built-in (front) or an
+  /// external (rear) camera. A computer without a camera, or a Linux build
+  /// without GStreamer, throws [ErrorCode.unsupported]; blocked camera access
+  /// throws [ErrorCode.permissionDenied]. macOS needs the camera entitlement
+  /// and `NSCameraUsageDescription` (see the README).
   Future<PlatformFile?> capturePhoto({
     CameraFacing preferredCamera = CameraFacing.rear,
     double? maxWidth,

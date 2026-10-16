@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 
+#include "camera_capture.h"
 #include "xue_hua_file_operations_plugin.h"
 
 namespace xue_hua_file_operations {
@@ -31,18 +32,20 @@ TEST(XueHuaFileOperationsPlugin, UnknownMethodIsNotImplemented) {
   EXPECT_TRUE(not_implemented);
 }
 
-TEST(XueHuaFileOperationsPlugin, CapturePhotoIsUnsupported) {
-  XueHuaFileOperationsPlugin plugin(nullptr);
-  std::string code;
-  plugin.HandleMethodCall(
-      MethodCall("capturePhoto", std::make_unique<EncodableValue>()),
-      std::make_unique<MethodResultFunctions<>>(
-          nullptr,
-          [&code](const std::string &error_code, const std::string &,
-                  const EncodableValue *) { code = error_code; },
-          nullptr));
-
-  EXPECT_EQ(code, "unsupported");
+TEST(CameraCapture, TargetSizeKeepsAspectRatioAndNeverEnlarges) {
+  int w = 0, h = 0;
+  CameraTargetSize(4000, 3000, 1000, 1000, &w, &h);
+  EXPECT_EQ(w, 1000);
+  EXPECT_EQ(h, 750);
+  CameraTargetSize(4000, 3000, 0, 600, &w, &h);
+  EXPECT_EQ(w, 800);
+  EXPECT_EQ(h, 600);
+  CameraTargetSize(640, 480, 2000, 2000, &w, &h);
+  EXPECT_EQ(w, 640);
+  EXPECT_EQ(h, 480);
+  CameraTargetSize(640, 480, 0, 0, &w, &h);
+  EXPECT_EQ(w, 640);
+  EXPECT_EQ(h, 480);
 }
 
 }  // namespace test

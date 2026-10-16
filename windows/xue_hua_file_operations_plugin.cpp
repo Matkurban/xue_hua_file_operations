@@ -6,6 +6,8 @@
 #include <shobjidl.h>
 #include <shellapi.h>
 
+#include "camera_capture.h"
+
 #include <flutter/method_channel.h>
 #include <flutter/plugin_registrar_windows.h>
 #include <flutter/standard_method_codec.h>
@@ -84,6 +86,20 @@ std::optional<int64_t> GetIntArg(const EncodableMap *args,
   }
   if (std::holds_alternative<int64_t>(it->second)) {
     return std::get<int64_t>(it->second);
+  }
+  return std::nullopt;
+}
+
+std::optional<double> GetDoubleArg(const EncodableMap *args,
+                                   const std::string &key) {
+  if (!args) return std::nullopt;
+  auto it = args->find(EncodableValue(key));
+  if (it == args->end()) return std::nullopt;
+  if (std::holds_alternative<double>(it->second)) {
+    return std::get<double>(it->second);
+  }
+  if (auto integer = GetIntArg(args, key)) {
+    return static_cast<double>(*integer);
   }
   return std::nullopt;
 }
@@ -705,6 +721,46 @@ void SaveToGallery(
   result->Success(EncodableValue(map));
 }
 
+void CaptureMedia(flutter::PluginRegistrarWindows *registrar,
+                  const EncodableMap *args, bool is_video,
+                  std::unique_ptr<flutter::MethodResult<EncodableValue>> result) {
+  CameraOptions options;
+  options.is_video = is_video;
+  options.prefer_front = GetStringArg(args, "preferredCamera") == "front";
+  if (auto v = GetDoubleArg(args, "maxWidth")) options.max_width = *v;
+  if (auto v = GetDoubleArg(args, "maxHeight")) options.max_height = *v;
+  if (auto v = GetIntArg(args, "imageQuality")) {
+    options.image_quality = static_cast<int>(*v);
+  }
+  if (auto v = GetIntArg(args, "maxDurationSeconds")) {
+    options.max_duration_seconds = static_cast<int>(*v);
+  }
+  const bool with_data = GetBoolArg(args, "withData", false);
+
+  CameraResult capture = CaptureWithCamera(GetRootWindow(registrar), options);
+  switch (capture.status) {
+    case CameraResult::Status::kOk: {
+      EncodableMap map;
+      map[EncodableValue("file")] =
+          EncodableValue(FileMapFromPath(capture.path, with_data));
+      result->Success(EncodableValue(map));
+      break;
+    }
+    case CameraResult::Status::kCancelled:
+      result->Success();
+      break;
+    case CameraResult::Status::kUnsupported:
+      result->Error("unsupported", capture.message);
+      break;
+    case CameraResult::Status::kPermissionDenied:
+      result->Error("permission_denied", capture.message);
+      break;
+    case CameraResult::Status::kIoError:
+      result->Error("io_error", capture.message);
+      break;
+  }
+}
+
 }  // namespace
 
 void XueHuaFileOperationsPlugin::RegisterWithRegistrar(
@@ -755,9 +811,10 @@ void XueHuaFileOperationsPlugin::HandleMethodCall(
     OpenFile(args, std::move(result));
   } else if (method == "openAppSettings") {
     OpenAppSettings(std::move(result));
-  } else if (method == "capturePhoto" || method == "captureVideo") {
-    // Desktop Windows has no system camera capture UI.
-    result->Error("unsupported", "Camera capture is not supported on Windows");
+  } else if (method == "capturePhoto") {
+    CaptureMedia(registrar_, args, false, std::move(result));
+  } else if (method == "captureVideo") {
+    CaptureMedia(registrar_, args, true, std::move(result));
   } else if (method == "retrieveLostCapture") {
     result->Success();
   } else {

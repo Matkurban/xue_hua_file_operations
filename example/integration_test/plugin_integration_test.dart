@@ -12,11 +12,23 @@ void main() {
     expect(XueHuaFileOperations.instance, isNotNull);
   });
 
-  testWidgets('camera capture is unsupported on desktop', (tester) async {
-    final isDesktop =
+  testWidgets('retrieveLostCapture is empty without a lost capture', (
+    tester,
+  ) async {
+    final lost = await XueHuaFileOperations.instance.retrieveLostCapture();
+    expect(lost.isEmpty, isTrue);
+  });
+
+  // Desktop capture opens a real camera window, so the test only runs where a
+  // camera is known to be absent: Linux without the videotestsrc test hook.
+  testWidgets('camera capture reports unsupported without a camera', (
+    tester,
+  ) async {
+    final linuxWithoutCamera =
         !kIsWeb &&
-        (Platform.isLinux || Platform.isMacOS || Platform.isWindows);
-    if (!isDesktop) return;
+        Platform.isLinux &&
+        !Platform.environment.containsKey('XUE_HUA_CAMERA_TEST_SOURCE');
+    if (!linuxWithoutCamera) return;
     for (final capture in <Future<Object?> Function()>[
       () => XueHuaFileOperations.instance.capturePhoto(),
       () => XueHuaFileOperations.instance.captureVideo(),
@@ -32,7 +44,5 @@ void main() {
         ),
       );
     }
-    final lost = await XueHuaFileOperations.instance.retrieveLostCapture();
-    expect(lost.isEmpty, isTrue);
   });
 }

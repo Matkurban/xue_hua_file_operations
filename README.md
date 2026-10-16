@@ -65,9 +65,9 @@ See [Ship skills with packages](https://dart.dev/tools/pub/package-skills).
 |----------|-------------|------------------------------------------------------------------------------------------------------------------|
 | Android  | Yes         | Storage Access Framework (SAF) / Activity Result APIs; `saveToGallery` uses MediaStore / public Pictures         |
 | iOS      | Yes (13.0+) | Media uses `PHPickerViewController` (iOS 14+), other types use `UIDocumentPicker`; `saveToGallery` uses PhotoKit |
-| macOS    | Yes         | Native `NSOpenPanel` / `NSSavePanel`; `saveToGallery` uses PhotoKit                                              |
-| Windows  | Yes         | Native file / folder dialogs; `saveToGallery` writes Pictures / Videos                                           |
-| Linux    | Yes         | Native file / folder dialogs; `saveToGallery` writes XDG Pictures / Videos                                       |
+| macOS    | Yes         | Native `NSOpenPanel` / `NSSavePanel`; `saveToGallery` uses PhotoKit; camera capture via AVFoundation              |
+| Windows  | Yes         | Native file / folder dialogs; `saveToGallery` writes Pictures / Videos; camera capture via Media Foundation       |
+| Linux    | Yes         | Native file / folder dialogs; `saveToGallery` writes XDG Pictures / Videos; camera capture via GStreamer          |
 | Web      | Yes         | HTML `<input type="file">` and Blob download; `saveToGallery` downloads the file                                 |
 
 ### Path and identifier behavior
@@ -167,7 +167,25 @@ For `saveToGallery` (Photos library), also add:
 
 And the same `NSPhotoLibraryAddUsageDescription` / `NSPhotoLibraryUsageDescription` keys as on iOS (in `macos/Runner/Info.plist`).
 
-**Camera:** `capturePhoto` / `captureVideo` are not supported on macOS and throw `ErrorCode.unsupported`; no camera entitlement or usage description is needed.
+**Camera:** `capturePhoto` / `captureVideo` use AVFoundation and show a sheet (or panel) with a live preview and *Take Photo* / *Record* / *Stop* / *Cancel* buttons. `preferredCamera: front` picks the built-in camera, `rear` prefers an external camera; output is JPEG / QuickTime `.mov`. Add the camera (and microphone, for video) entitlements to `DebugProfile.entitlements` and `Release.entitlements` when the App Sandbox is on:
+
+```xml
+<key>com.apple.security.device.camera</key>
+<true/>
+<key>com.apple.security.device.audio-input</key>
+<true/>
+```
+
+and the usage descriptions to `macos/Runner/Info.plist` (the plugin returns `ErrorCode.invalidArgs` when a key is missing; video still works without the microphone permission, just without sound):
+
+```xml
+<key>NSCameraUsageDescription</key>
+<string>This app takes photos and records videos.</string>
+<key>NSMicrophoneUsageDescription</key>
+<string>This app records audio when capturing videos.</string>
+```
+
+A denied camera permission throws `ErrorCode.permissionDenied` (System Settings → Privacy & Security → Camera); no camera throws `ErrorCode.unsupported`.
 
 Without the Photos entitlement, PhotoKit often returns `.denied` immediately and never shows a prompt.
 
@@ -191,13 +209,21 @@ See the example app entitlements under `example/macos/Runner/`.
 
 ### Windows
 
-**Camera:** `capturePhoto` / `captureVideo` are not supported and throw `ErrorCode.unsupported`.
+**Camera:** `capturePhoto` / `captureVideo` open a native preview window (Media Foundation capture engine) with *Take Photo* / *Record* / *Stop* / *Cancel* buttons. Photos are JPEG, videos are H.264 + AAC MP4 (sound is skipped when no microphone exists). `preferredCamera` prefers an integrated (front) or an external (rear) camera by device name. No manifest entry is needed for desktop (Win32) apps, but Windows Settings → Privacy & security → Camera → *Let desktop apps access your camera* must be on; otherwise `ErrorCode.permissionDenied` is thrown. No camera → `ErrorCode.unsupported`. (Implemented against the Windows SDK but not yet verified on a physical Windows machine.)
 
 **Permissions:** None. Uses native system file and folder dialogs. `saveToGallery` writes to the user Pictures or Videos known folder. No extra manifest entries are required for this plugin.
 
 ### Linux
 
-**Camera:** `capturePhoto` / `captureVideo` are not supported and throw `ErrorCode.unsupported`.
+**Camera:** `capturePhoto` / `captureVideo` open a GTK preview dialog fed by GStreamer (`v4l2src`). Photos are JPEG, videos are MP4 (H.264 via `x264enc` or `openh264enc`, plus `h264parse` from the *bad* plugins and `mp4mux`) or WebM (VP8) when no H.264 encoder / parser is installed. The build needs the GStreamer development packages (without them the plugin still builds and the capture methods throw `ErrorCode.unsupported`); at runtime a V4L2 camera is required (`ErrorCode.unsupported` otherwise, `ErrorCode.permissionDenied` when `/dev/video*` cannot be opened - add the user to the `video` group).
+
+| Distro        | Build packages                                                                             | Runtime plugins (video recording)                       |
+| ------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
+| Ubuntu/Debian | `libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev`                                     | `gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly` |
+| Fedora        | `gstreamer1-devel gstreamer1-plugins-base-devel`                                           | `gstreamer1-plugins-good gstreamer1-plugins-bad-free` (+ RPM Fusion `x264` / `openh264` for H.264)|
+| Arch          | `gstreamer gst-plugins-base`                                                               | `gst-plugins-good gst-plugins-bad gst-plugins-ugly`                   |
+
+Testing without a camera: set `XUE_HUA_CAMERA_TEST_SOURCE=videotestsrc` to use GStreamer's test pattern as the camera, and `XUE_HUA_CAMERA_TEST_AUTO=1` to press the shutter / stop automatically (used by the example's `flutter_driver` test).
 
 **Permissions:** None. Uses native system file and folder dialogs. `saveToGallery` writes to XDG Pictures or Videos (there is no system photo library). No extra desktop permissions are required for this plugin.
 
@@ -319,7 +345,7 @@ Future<List<PlatformFile>?> pickFiles({
 
 ### `capturePhoto`
 
-Take a photo with the system camera. Returns `null` if the user cancels.
+Take a photo with the system / device camera. Returns `null` if the user cancels.
 
 ```dart
 Future<PlatformFile?> capturePhoto({
@@ -341,7 +367,7 @@ Future<PlatformFile?> capturePhoto({
 
 Without `maxWidth` / `maxHeight` / `imageQuality` the original capture is returned untouched.
 
-**Errors:** `ErrorCode.permissionDenied` (camera refused), `ErrorCode.unsupported` (no camera / Linux / macOS / Windows), `ErrorCode.invalidArgs` (bad option, or missing iOS `Info.plist` key), `ErrorCode.ioError`.
+**Errors:** `ErrorCode.permissionDenied` (camera refused), `ErrorCode.unsupported` (no camera, or Linux without GStreamer), `ErrorCode.invalidArgs` (bad option, or missing iOS `Info.plist` key), `ErrorCode.ioError`.
 
 ### `captureVideo`
 

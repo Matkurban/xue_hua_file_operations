@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "camera_capture.h"
 #include "xue_hua_file_operations_plugin_private.h"
 
 #define XUE_HUA_FILE_OPERATIONS_PLUGIN(obj) \
@@ -25,13 +26,6 @@ G_DEFINE_TYPE(XueHuaFileOperationsPlugin, xue_hua_file_operations_plugin,
               g_object_get_type())
 
 gboolean xue_hua_file_operations_plugin_is_supported(void) { return TRUE; }
-
-// Desktop Linux has no system camera capture UI, so report it with the shared
-// `unsupported` code.
-FlMethodResponse* xue_hua_file_operations_plugin_capture_unsupported(void) {
-  return FL_METHOD_RESPONSE(fl_method_error_response_new(
-      "unsupported", "Camera capture is not supported on Linux", nullptr));
-}
 
 static GtkWindow* get_window(XueHuaFileOperationsPlugin* self) {
   FlView* view = fl_plugin_registrar_get_view(self->registrar);
@@ -247,6 +241,69 @@ static FlMethodResponse* pick_files(XueHuaFileOperationsPlugin* self,
   g_autoptr(FlValue) wrapper = fl_value_new_map();
   fl_value_set_string_take(wrapper, "files", fl_value_ref(files));
   return FL_METHOD_RESPONSE(fl_method_success_response_new(wrapper));
+}
+
+static bool get_double_arg(FlValue* args, const char* key, double* out) {
+  if (args == nullptr || fl_value_get_type(args) != FL_VALUE_TYPE_MAP) {
+    return false;
+  }
+  FlValue* value = fl_value_lookup_string(args, key);
+  if (value == nullptr) return false;
+  if (fl_value_get_type(value) == FL_VALUE_TYPE_FLOAT) {
+    *out = fl_value_get_float(value);
+    return true;
+  }
+  if (fl_value_get_type(value) == FL_VALUE_TYPE_INT) {
+    *out = static_cast<double>(fl_value_get_int(value));
+    return true;
+  }
+  return false;
+}
+
+// capturePhoto / captureVideo: modal GStreamer camera preview dialog.
+static FlMethodResponse* capture_media(XueHuaFileOperationsPlugin* self,
+                                       FlValue* args, bool is_video) {
+  XueHuaCameraOptions options;
+  options.is_video = is_video;
+  options.prefer_front = get_string_arg(args, "preferredCamera") == "front";
+  bool with_data = get_bool_arg(args, "withData", false);
+  double number = 0;
+  int64_t integer = 0;
+  if (get_double_arg(args, "maxWidth", &number)) options.max_width = number;
+  if (get_double_arg(args, "maxHeight", &number)) options.max_height = number;
+  if (get_int_arg(args, "imageQuality", &integer)) {
+    options.image_quality = static_cast<int>(integer);
+  }
+  if (get_int_arg(args, "maxDurationSeconds", &integer)) {
+    options.max_duration_seconds = static_cast<int>(integer);
+  }
+
+  XueHuaCameraResult capture =
+      xue_hua_camera_capture(get_window(self), options);
+  switch (capture.status) {
+    case XueHuaCameraResult::kOk: {
+      FlValue* file_map = file_map_from_path(capture.path.c_str(), with_data);
+      if (file_map == nullptr) {
+        return FL_METHOD_RESPONSE(fl_method_error_response_new(
+            "io_error", "Unable to read captured file", nullptr));
+      }
+      g_autoptr(FlValue) wrapper = fl_value_new_map();
+      fl_value_set_string_take(wrapper, "file", file_map);
+      return FL_METHOD_RESPONSE(fl_method_success_response_new(wrapper));
+    }
+    case XueHuaCameraResult::kCancelled:
+      return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+    case XueHuaCameraResult::kUnsupported:
+      return FL_METHOD_RESPONSE(fl_method_error_response_new(
+          "unsupported", capture.message.c_str(), nullptr));
+    case XueHuaCameraResult::kPermissionDenied:
+      return FL_METHOD_RESPONSE(fl_method_error_response_new(
+          "permission_denied", capture.message.c_str(), nullptr));
+    case XueHuaCameraResult::kIoError:
+    default:
+      return FL_METHOD_RESPONSE(fl_method_error_response_new(
+          "io_error", capture.message.c_str(), nullptr));
+  }
 }
 
 static FlMethodResponse* pick_directory(XueHuaFileOperationsPlugin* self,
@@ -541,9 +598,10 @@ static void xue_hua_file_operations_plugin_handle_method_call(
         fl_method_success_response_new(fl_value_new_string("granted")));
   } else if (strcmp(method, "openFile") == 0) {
     response = open_file(self, args);
-  } else if (strcmp(method, "capturePhoto") == 0 ||
-             strcmp(method, "captureVideo") == 0) {
-    response = xue_hua_file_operations_plugin_capture_unsupported();
+  } else if (strcmp(method, "capturePhoto") == 0) {
+    response = capture_media(self, args, false);
+  } else if (strcmp(method, "captureVideo") == 0) {
+    response = capture_media(self, args, true);
   } else if (strcmp(method, "retrieveLostCapture") == 0) {
     response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
   } else if (strcmp(method, "openAppSettings") == 0) {

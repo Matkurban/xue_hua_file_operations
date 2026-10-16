@@ -94,7 +94,8 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
       } else {
         _files = lost.files;
         _selected = lost.files.isEmpty ? null : lost.files.first;
-        _status = 'Recovered lost ${lost.type?.name ?? "capture"}'
+        _status =
+            'Recovered lost ${lost.type?.name ?? "capture"}'
             '${lost.exception != null ? " (${lost.exception})" : ""}';
       }
     });
@@ -325,12 +326,14 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          SelectableText(
+          Text(
             _status,
+            key: const ValueKey('status'),
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 12),
           SwitchListTile(
+            key: const ValueKey('withData'),
             title: const Text('withData'),
             subtitle: const Text('Load bytes into memory (always on Web)'),
             value: _withData,
@@ -356,8 +359,14 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
           const SizedBox(height: 8),
           SegmentedButton<CameraFacing>(
             segments: const [
-              ButtonSegment(value: CameraFacing.rear, label: Text('rear camera')),
-              ButtonSegment(value: CameraFacing.front, label: Text('front camera')),
+              ButtonSegment(
+                value: CameraFacing.rear,
+                label: Text('rear camera'),
+              ),
+              ButtonSegment(
+                value: CameraFacing.front,
+                label: Text('front camera'),
+              ),
             ],
             selected: {_camera},
             onSelectionChanged: (selection) =>
@@ -369,6 +378,7 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
             runSpacing: 8,
             children: [
               FilledButton(
+                key: const ValueKey('pickFile'),
                 onPressed: _pickFile,
                 child: const Text('Pick File'),
               ),
@@ -387,6 +397,7 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
                 child: const Text('Record Video'),
               ),
               OutlinedButton(
+                key: const ValueKey('retrieveLostCapture'),
                 onPressed: _retrieveLostCapture,
                 child: const Text('Retrieve Lost Capture'),
               ),
@@ -426,16 +437,21 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
           if (_files.isEmpty)
             const Text('No files selected')
           else
-            ..._files.map((file) {
+            ..._files.asMap().entries.map((entry) {
+              final file = entry.value;
               final selected =
                   identical(file, _selected) ||
                   (file.path != null && file.path == _selected?.path) ||
                   (file.identifier != null &&
                       file.identifier == _selected?.identifier);
               return Card(
+                key: ValueKey('file_${entry.key}'),
                 child: ListTile(
                   selected: selected,
-                  title: Text(file.name),
+                  title: Text(
+                    file.name,
+                    key: ValueKey('file_name_${entry.key}'),
+                  ),
                   subtitle: Text(
                     'size=${file.size}\n'
                     'path=${file.path ?? "(null)"}\n'
