@@ -1,8 +1,12 @@
 name: Deploy web demo
 
+# Runs only when the package version in pubspec.yaml changes on main,
+# or when triggered manually, to save GitHub Actions minutes.
 on:
   push:
     branches: [main]
+    paths:
+      - pubspec.yaml
   workflow_dispatch:
 
 permissions:
@@ -15,7 +19,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  version-check:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+      - id: check
+        name: Check whether the pubspec version changed
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          new=$(grep -m1 '^version:' pubspec.yaml | awk '{print $2}')
+          old=$(git show "${{ github.event.before }}:pubspec.yaml" 2>/dev/null | grep -m1 '^version:' | awk '{print $2}' || true)
+          echo "old=$old new=$new"
+          if [ "$old" != "$new" ]; then echo "changed=true" >> "$GITHUB_OUTPUT"; else echo "changed=false" >> "$GITHUB_OUTPUT"; fi
+
   build:
+    needs: version-check
+    if: needs.version-check.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
