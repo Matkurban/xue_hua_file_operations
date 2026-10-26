@@ -1,3 +1,8 @@
+## 1.5.2
+
+* Windows: add the same automated dialog test hooks as Linux (`XUE_HUA_TEST_PICK_FILE` / `PICK_FILES` / `PICK_DIR` / `SAVE_FILE` / `OPEN_FILE=skip`, literal `CANCEL`) so `flutter_driver` can cover pick / save / open without native choosers. Multi-file paths are semicolon-separated on Windows.
+* Docs: document Windows dialog hooks in English and Chinese READMEs; mention Windows in the example `flutter_driver` header.
+
 ## 1.5.1
 
 * Linux: add automated dialog test hooks for `pickFile` / `pickFiles` / `pickDirectory` / `saveFile` / `openFile` (`XUE_HUA_TEST_PICK_*`, `XUE_HUA_TEST_SAVE_FILE`, `XUE_HUA_TEST_OPEN_FILE=skip`, literal `CANCEL`) so `flutter_driver` can cover non-camera APIs without interacting with GTK choosers.
