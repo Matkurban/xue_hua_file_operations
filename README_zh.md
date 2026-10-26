@@ -225,7 +225,7 @@ tccutil reset Photos com.your.bundle.id
 | Fedora        | `gstreamer1-devel gstreamer1-plugins-base-devel`       | `gstreamer1-plugins-good gstreamer1-plugins-bad-free`（H.264 需 RPM Fusion `x264` / `openh264`）|
 | Arch          | `gstreamer gst-plugins-base`                           | `gst-plugins-good gst-plugins-bad gst-plugins-ugly`                   |
 
-无摄像头时测试：设置 `XUE_HUA_CAMERA_TEST_SOURCE=videotestsrc` 使用 GStreamer 测试图像作为摄像头，`XUE_HUA_CAMERA_TEST_AUTO=1` 自动按下快门 / 停止（示例的 `flutter_driver` 测试使用）。
+无摄像头时测试：设置 `XUE_HUA_CAMERA_TEST_SOURCE=videotestsrc` 使用 GStreamer 测试图像作为摄像头，`XUE_HUA_CAMERA_TEST_AUTO=1` 自动按下快门 / 停止（示例的 `flutter_driver` 测试使用）。 自动化测试还可跳过原生 GTK 文件对话框：`XUE_HUA_TEST_PICK_FILE`、`XUE_HUA_TEST_PICK_FILES`（冒号分隔）、`XUE_HUA_TEST_PICK_DIR`、`XUE_HUA_TEST_SAVE_FILE`（字面量 `CANCEL` 表示取消），以及 `XUE_HUA_TEST_OPEN_FILE=skip`（只校验路径存在、不打开查看器）。见 `example/test_driver/`。
 
 **权限：** 无需额外权限。使用系统原生文件 / 文件夹对话框。`saveToGallery` 写入 XDG Pictures 或 Videos（Linux 没有系统相册 API）。无需为本插件添加额外桌面权限。
 

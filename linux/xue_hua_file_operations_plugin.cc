@@ -90,6 +90,41 @@ static std::vector<std::string> get_string_list_arg(FlValue* args,
   return out;
 }
 
+
+// Automated UI-test hooks (skip native GTK dialogs). Set by flutter_driver:
+//   XUE_HUA_TEST_PICK_FILE=/abs/path           single-file pick
+//   XUE_HUA_TEST_PICK_FILES=/a:/b              multi-file pick (colon-separated)
+//   XUE_HUA_TEST_PICK_DIR=/abs/dir             directory pick
+//   XUE_HUA_TEST_SAVE_FILE=/abs/path           save-as destination
+//   XUE_HUA_TEST_OPEN_FILE=skip                validate path exists, do not open
+// Any of the pick/save vars may be the literal "CANCEL" to simulate cancel.
+static const char kTestPickFileEnv[] = "XUE_HUA_TEST_PICK_FILE";
+static const char kTestPickFilesEnv[] = "XUE_HUA_TEST_PICK_FILES";
+static const char kTestPickDirEnv[] = "XUE_HUA_TEST_PICK_DIR";
+static const char kTestSaveFileEnv[] = "XUE_HUA_TEST_SAVE_FILE";
+static const char kTestOpenFileEnv[] = "XUE_HUA_TEST_OPEN_FILE";
+
+static bool test_hook_is_cancel(const char* value) {
+  return value != nullptr && strcmp(value, "CANCEL") == 0;
+}
+
+static std::vector<std::string> split_colon_paths(const char* value) {
+  std::vector<std::string> out;
+  if (value == nullptr || value[0] == '\0') return out;
+  std::string remaining(value);
+  size_t start = 0;
+  while (start <= remaining.size()) {
+    size_t pos = remaining.find(':', start);
+    if (pos == std::string::npos) {
+      if (start < remaining.size()) out.push_back(remaining.substr(start));
+      break;
+    }
+    if (pos > start) out.push_back(remaining.substr(start, pos - start));
+    start = pos + 1;
+  }
+  return out;
+}
+
 // Returns nullptr when with_data is set and the file cannot be read.
 static FlValue* file_map_from_path(const char* path, bool with_data) {
   g_autofree gchar* basename = g_path_get_basename(path);
@@ -178,6 +213,52 @@ static FlMethodResponse* pick_files(XueHuaFileOperationsPlugin* self,
   int64_t max_files = 0;
   bool has_max = get_int_arg(args, "maxFiles", &max_files);
   std::string title = get_string_arg(args, "dialogTitle");
+
+  const char* hook = multiple ? g_getenv(kTestPickFilesEnv)
+                              : g_getenv(kTestPickFileEnv);
+  // Allow the single-file env for multi when the multi env is unset.
+  if (multiple && hook == nullptr) hook = g_getenv(kTestPickFileEnv);
+  if (hook != nullptr) {
+    if (test_hook_is_cancel(hook)) {
+      return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+    }
+    auto paths = split_colon_paths(hook);
+    if (paths.empty()) {
+      return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+    }
+    if (!multiple) {
+      FlValue* file_map = file_map_from_path(paths[0].c_str(), with_data);
+      if (file_map == nullptr) {
+        return FL_METHOD_RESPONSE(fl_method_error_response_new(
+            "io_error", "Unable to read selected file", nullptr));
+      }
+      g_autoptr(FlValue) wrapper = fl_value_new_map();
+      fl_value_set_string_take(wrapper, "file", file_map);
+      return FL_METHOD_RESPONSE(fl_method_success_response_new(wrapper));
+    }
+    if (has_max && static_cast<int64_t>(paths.size()) > max_files) {
+      g_autoptr(FlValue) details = fl_value_new_map();
+      fl_value_set_string_take(
+          details, "selected",
+          fl_value_new_int(static_cast<int64_t>(paths.size())));
+      fl_value_set_string_take(details, "maxFiles", fl_value_new_int(max_files));
+      return FL_METHOD_RESPONSE(fl_method_error_response_new(
+          "too_many_files", "Selected more files than maxFiles allows",
+          details));
+    }
+    g_autoptr(FlValue) files = fl_value_new_list();
+    for (const auto& path : paths) {
+      FlValue* file_map = file_map_from_path(path.c_str(), with_data);
+      if (file_map == nullptr) {
+        return FL_METHOD_RESPONSE(fl_method_error_response_new(
+            "io_error", "Unable to read selected file", nullptr));
+      }
+      fl_value_append_take(files, file_map);
+    }
+    g_autoptr(FlValue) wrapper = fl_value_new_map();
+    fl_value_set_string_take(wrapper, "files", fl_value_ref(files));
+    return FL_METHOD_RESPONSE(fl_method_success_response_new(wrapper));
+  }
 
   GtkFileChooserNative* native = gtk_file_chooser_native_new(
       title.empty() ? "Select files" : title.c_str(), get_window(self),
@@ -309,6 +390,21 @@ static FlMethodResponse* capture_media(XueHuaFileOperationsPlugin* self,
 static FlMethodResponse* pick_directory(XueHuaFileOperationsPlugin* self,
                                         FlValue* args) {
   std::string title = get_string_arg(args, "dialogTitle");
+  const char* hook = g_getenv(kTestPickDirEnv);
+  if (hook != nullptr) {
+    if (test_hook_is_cancel(hook)) {
+      return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+    }
+    g_autofree gchar* basename = g_path_get_basename(hook);
+    g_autoptr(FlValue) map = fl_value_new_map();
+    fl_value_set_string_take(map, "path", fl_value_new_string(hook));
+    fl_value_set_string_take(map, "name", fl_value_new_string(basename));
+    g_autofree gchar* identifier = g_strdup_printf("file://%s", hook);
+    fl_value_set_string_take(map, "identifier",
+                             fl_value_new_string(identifier));
+    return FL_METHOD_RESPONSE(fl_method_success_response_new(map));
+  }
+
   GtkFileChooserNative* native = gtk_file_chooser_native_new(
       title.empty() ? "Select folder" : title.c_str(), get_window(self),
       GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER, "_Open", "_Cancel");
@@ -355,6 +451,62 @@ static FlMethodResponse* save_file(XueHuaFileOperationsPlugin* self,
         nullptr));
   }
 
+  auto write_to_path = [&](const char* filename) -> FlMethodResponse* {
+    try {
+      if (has_bytes) {
+        size_t length = fl_value_get_length(bytes_value);
+        const uint8_t* data = fl_value_get_uint8_list(bytes_value);
+        std::ofstream out(filename, std::ios::binary);
+        if (!out) {
+          return FL_METHOD_RESPONSE(fl_method_error_response_new(
+              "io_error", "Unable to open destination file", nullptr));
+        }
+        out.write(reinterpret_cast<const char*>(data),
+                  static_cast<std::streamsize>(length));
+        out.close();
+        if (out.fail()) {
+          return FL_METHOD_RESPONSE(fl_method_error_response_new(
+              "io_error", "Failed to write file", nullptr));
+        }
+      } else {
+        if (!g_file_test(source_path.c_str(), G_FILE_TEST_EXISTS)) {
+          return FL_METHOD_RESPONSE(fl_method_error_response_new(
+              "not_found", ("File not found: " + source_path).c_str(),
+              nullptr));
+        }
+        std::ifstream input(source_path, std::ios::binary);
+        std::ofstream out(filename, std::ios::binary);
+        if (!input || !out) {
+          return FL_METHOD_RESPONSE(fl_method_error_response_new(
+              "io_error", "Failed to open source or destination file",
+              nullptr));
+        }
+        out << input.rdbuf();
+        out.close();
+        if (input.bad() || out.fail()) {
+          return FL_METHOD_RESPONSE(fl_method_error_response_new(
+              "io_error", "Failed to write file", nullptr));
+        }
+      }
+    } catch (...) {
+      return FL_METHOD_RESPONSE(fl_method_error_response_new(
+          "io_error", "Failed to write file", nullptr));
+    }
+    g_autofree gchar* basename = g_path_get_basename(filename);
+    g_autoptr(FlValue) map = fl_value_new_map();
+    fl_value_set_string_take(map, "path", fl_value_new_string(filename));
+    fl_value_set_string_take(map, "name", fl_value_new_string(basename));
+    return FL_METHOD_RESPONSE(fl_method_success_response_new(map));
+  };
+
+  const char* save_hook = g_getenv(kTestSaveFileEnv);
+  if (save_hook != nullptr) {
+    if (test_hook_is_cancel(save_hook)) {
+      return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+    }
+    return write_to_path(save_hook);
+  }
+
   GtkFileChooserNative* native = gtk_file_chooser_native_new(
       title.empty() ? "Save file" : title.c_str(), get_window(self),
       GTK_FILE_CHOOSER_ACTION_SAVE, "_Save", "_Cancel");
@@ -374,51 +526,7 @@ static FlMethodResponse* save_file(XueHuaFileOperationsPlugin* self,
   if (filename == nullptr) {
     return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
   }
-
-  try {
-    if (has_bytes) {
-      size_t length = fl_value_get_length(bytes_value);
-      const uint8_t* data = fl_value_get_uint8_list(bytes_value);
-      std::ofstream out(filename, std::ios::binary);
-      if (!out) {
-        return FL_METHOD_RESPONSE(fl_method_error_response_new(
-            "io_error", "Unable to open destination file", nullptr));
-      }
-      out.write(reinterpret_cast<const char*>(data),
-                static_cast<std::streamsize>(length));
-      out.close();
-      if (out.fail()) {
-        return FL_METHOD_RESPONSE(fl_method_error_response_new(
-            "io_error", "Failed to write file", nullptr));
-      }
-    } else {
-      if (!g_file_test(source_path.c_str(), G_FILE_TEST_EXISTS)) {
-        return FL_METHOD_RESPONSE(fl_method_error_response_new(
-            "not_found", ("File not found: " + source_path).c_str(), nullptr));
-      }
-      std::ifstream input(source_path, std::ios::binary);
-      std::ofstream out(filename, std::ios::binary);
-      if (!input || !out) {
-        return FL_METHOD_RESPONSE(fl_method_error_response_new(
-            "io_error", "Failed to open source or destination file", nullptr));
-      }
-      out << input.rdbuf();
-      out.close();
-      if (input.bad() || out.fail()) {
-        return FL_METHOD_RESPONSE(fl_method_error_response_new(
-            "io_error", "Failed to write file", nullptr));
-      }
-    }
-  } catch (...) {
-    return FL_METHOD_RESPONSE(
-        fl_method_error_response_new("io_error", "Failed to write file", nullptr));
-  }
-
-  g_autofree gchar* basename = g_path_get_basename(filename);
-  g_autoptr(FlValue) map = fl_value_new_map();
-  fl_value_set_string_take(map, "path", fl_value_new_string(filename));
-  fl_value_set_string_take(map, "name", fl_value_new_string(basename));
-  return FL_METHOD_RESPONSE(fl_method_success_response_new(map));
+  return write_to_path(filename);
 }
 
 static std::string unique_dest_path(const std::string& dir,
@@ -554,6 +662,16 @@ static FlMethodResponse* open_file(XueHuaFileOperationsPlugin* self,
   if (path.empty()) {
     return FL_METHOD_RESPONSE(fl_method_error_response_new(
         "invalid_args", "Either path or identifier must be provided", nullptr));
+  }
+
+  const char* open_hook = g_getenv(kTestOpenFileEnv);
+  if (open_hook != nullptr && strcmp(open_hook, "skip") == 0) {
+    if (!g_file_test(path.c_str(), G_FILE_TEST_EXISTS)) {
+      return FL_METHOD_RESPONSE(
+          fl_method_error_response_new("not_found", "File not found", nullptr));
+    }
+    return FL_METHOD_RESPONSE(
+        fl_method_success_response_new(fl_value_new_bool(TRUE)));
   }
 
   g_autofree gchar* uri = g_filename_to_uri(path.c_str(), nullptr, nullptr);

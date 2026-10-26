@@ -225,7 +225,7 @@ See the example app entitlements under `example/macos/Runner/`.
 | Fedora        | `gstreamer1-devel gstreamer1-plugins-base-devel`                                           | `gstreamer1-plugins-good gstreamer1-plugins-bad-free` (+ RPM Fusion `x264` / `openh264` for H.264)|
 | Arch          | `gstreamer gst-plugins-base`                                                               | `gst-plugins-good gst-plugins-bad gst-plugins-ugly`                   |
 
-Testing without a camera: set `XUE_HUA_CAMERA_TEST_SOURCE=videotestsrc` to use GStreamer's test pattern as the camera, and `XUE_HUA_CAMERA_TEST_AUTO=1` to press the shutter / stop automatically (used by the example's `flutter_driver` test).
+Testing without a camera: set `XUE_HUA_CAMERA_TEST_SOURCE=videotestsrc` to use GStreamer's test pattern as the camera, and `XUE_HUA_CAMERA_TEST_AUTO=1` to press the shutter / stop automatically (used by the example's `flutter_driver` test). Dialog-based APIs can skip the native GTK chooser in automated runs: `XUE_HUA_TEST_PICK_FILE`, `XUE_HUA_TEST_PICK_FILES` (colon-separated), `XUE_HUA_TEST_PICK_DIR`, `XUE_HUA_TEST_SAVE_FILE` (literal `CANCEL` simulates cancel), and `XUE_HUA_TEST_OPEN_FILE=skip` (validate the path exists without opening a viewer). See `example/test_driver/`.
 
 **Permissions:** None. Uses native system file and folder dialogs. `saveToGallery` writes to XDG Pictures or Videos (there is no system photo library). No extra desktop permissions are required for this plugin.
 

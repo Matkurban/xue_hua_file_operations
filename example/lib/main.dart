@@ -340,6 +340,7 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
             onChanged: (v) => setState(() => _withData = v),
           ),
           SwitchListTile(
+            key: const ValueKey('limitMaxFiles'),
             title: const Text('Limit maxFiles to 3'),
             value: _maxFiles != null,
             onChanged: (v) => setState(() => _maxFiles = v ? 3 : null),
@@ -383,16 +384,17 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
                 child: const Text('Pick File'),
               ),
               FilledButton.tonal(
+                key: const ValueKey('pickFiles'),
                 onPressed: _pickFiles,
                 child: const Text('Pick Files'),
               ),
               FilledButton.tonal(
-                key: const Key('capturePhoto'),
+                key: const ValueKey('capturePhoto'),
                 onPressed: _capturePhoto,
                 child: const Text('Take Photo'),
               ),
               FilledButton.tonal(
-                key: const Key('captureVideo'),
+                key: const ValueKey('captureVideo'),
                 onPressed: _captureVideo,
                 child: const Text('Record Video'),
               ),
@@ -402,26 +404,32 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
                 child: const Text('Retrieve Lost Capture'),
               ),
               OutlinedButton(
+                key: const ValueKey('pickDirectory'),
                 onPressed: _pickDirectory,
                 child: const Text('Pick Directory'),
               ),
               OutlinedButton(
+                key: const ValueKey('saveFile'),
                 onPressed: _saveFile,
                 child: const Text('Save As'),
               ),
               OutlinedButton(
+                key: const ValueKey('saveToGallery'),
                 onPressed: _saveToGallery,
                 child: const Text('Save to Gallery'),
               ),
               OutlinedButton(
+                key: const ValueKey('galleryStatus'),
                 onPressed: _galleryStatus,
                 child: const Text('Gallery Status'),
               ),
               OutlinedButton(
+                key: const ValueKey('requestGalleryPermission'),
                 onPressed: _requestGalleryPermission,
                 child: const Text('Request Gallery Permission'),
               ),
               OutlinedButton(
+                key: const ValueKey('openSelected'),
                 onPressed: _openSelected,
                 child: const Text('Open Selected'),
               ),
@@ -430,7 +438,10 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
           if (_directory != null) ...[
             const SizedBox(height: 16),
             Text('Directory', style: Theme.of(context).textTheme.titleSmall),
-            Text('${_directory!.name}\n${_directory!.path}'),
+            Text(
+              key: const ValueKey('directory_info'),
+              '${_directory!.name}\n${_directory!.path}',
+            ),
           ],
           const SizedBox(height: 16),
           Text('Files', style: Theme.of(context).textTheme.titleSmall),

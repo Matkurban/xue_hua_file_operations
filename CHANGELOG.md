@@ -1,3 +1,8 @@
+## 1.5.1
+
+* Linux: add automated dialog test hooks for `pickFile` / `pickFiles` / `pickDirectory` / `saveFile` / `openFile` (`XUE_HUA_TEST_PICK_*`, `XUE_HUA_TEST_SAVE_FILE`, `XUE_HUA_TEST_OPEN_FILE=skip`, literal `CANCEL`) so `flutter_driver` can cover non-camera APIs without interacting with GTK choosers.
+* Example: give every demo action a `ValueKey`, expand `flutter_driver` coverage (gallery permission, pick / save / open, camera, save-to-gallery), and add cancel / tooManyFiles / unsupported edge-case drivers.
+
 ## 1.5.0
 
 * **Camera capture.** Add `capturePhoto` (take a photo) and `captureVideo` (record a video) with `preferredCamera` (`CameraFacing.rear` / `front`), photo `maxWidth` / `maxHeight` / `imageQuality`, video `maxDuration` and `withData`. Both return a `PlatformFile?` (`null` on cancel).
