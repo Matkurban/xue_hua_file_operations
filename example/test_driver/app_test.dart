@@ -12,7 +12,7 @@
 //   XUE_HUA_TEST_PICK_FILE / XUE_HUA_TEST_PICK_FILES / XUE_HUA_TEST_PICK_DIR
 //   XUE_HUA_TEST_SAVE_FILE / XUE_HUA_TEST_OPEN_FILE=skip
 //   Literal CANCEL on a pick/save hook simulates cancel.
-//   Multi-file paths: colon-separated on Linux, semicolon-separated on Windows.
+//   Multi-file paths: colon-separated on Linux/macOS, semicolon-separated on Windows.
 //
 // Optional (Android, where the captured file lives on the device):
 //   XUE_HUA_ADB=<path to adb>  XUE_HUA_ADB_SERIAL=<serial>  XUE_HUA_APP_ID=<applicationId>
@@ -58,7 +58,12 @@ void main() {
         0x00, 0x00, 0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3F, 0x00,
         0x7F, 0xFF, 0xD9,
     ]);
-    saveDest = File('${fixturesDir.path}/saved_out.txt');
+    final saveHook = Platform.environment['XUE_HUA_TEST_SAVE_FILE'];
+    saveDest = File(
+      (saveHook != null && saveHook.isNotEmpty && saveHook != 'CANCEL')
+          ? saveHook
+          : '${fixturesDir.path}/saved_out.txt',
+    );
     if (saveDest.existsSync()) saveDest.deleteSync();
 
     // Export hooks for the app process when the driver hosts the launch on
@@ -208,6 +213,19 @@ void main() {
     );
     // ignore: avoid_print
     print('EVIDENCE ${await status()}');
+    // The example may show a Photos Settings AlertDialog when permanently
+    // denied / restricted. Dismiss it so later taps are not blocked.
+    try {
+      await driver.waitFor(
+        find.text('Not now'),
+        timeout: const Duration(seconds: 3),
+      );
+      await driver.tap(find.text('Not now'));
+      // ignore: avoid_print
+      print('EVIDENCE dismissed Photos permission dialog');
+    } catch (_) {
+      // Dialog not shown — fine.
+    }
   });
 
   test('pickFile via dialog hook', () async {
@@ -298,18 +316,26 @@ void main() {
     if (expectation != 'captured') return;
     await driver.tap(find.byValueKey('saveToGallery'));
     await waitStatus(
-      (s) => s.startsWith('Gallery:'),
+      (s) =>
+          s.startsWith('Gallery:') ||
+          s.contains('permission_denied') ||
+          s.contains('permissionDenied'),
       const Duration(seconds: 30),
     );
     final s = await status();
-    final pathMatch = RegExp(r'Gallery: (.+)').firstMatch(s);
-    expect(pathMatch, isNotNull);
-    final galleryPath = pathMatch!.group(1)!;
-    if (!galleryPath.startsWith('file://') && File(galleryPath).existsSync()) {
-      expect(File(galleryPath).lengthSync(), greaterThan(1000));
-    }
     // ignore: avoid_print
     print('EVIDENCE saveToGallery $s');
+    if (s.startsWith('Gallery:')) {
+      final pathMatch = RegExp(r'Gallery: (.+)').firstMatch(s);
+      expect(pathMatch, isNotNull);
+      final galleryPath = pathMatch!.group(1)!;
+      if (!galleryPath.startsWith('file://') && File(galleryPath).existsSync()) {
+        expect(File(galleryPath).lengthSync(), greaterThan(1000));
+      }
+    } else {
+      // macOS Photos TCC may deny when the launch parent is not Terminal.
+      expect(s.contains('permission_denied') || s.contains('permissionDenied'), isTrue);
+    }
   });
 
   test('openSelected after photo', timeout: slow, () async {
@@ -375,7 +401,10 @@ void main() {
     if (expectation != 'captured') return;
     await driver.tap(find.byValueKey('saveToGallery'));
     await waitStatus(
-      (s) => s.startsWith('Gallery:'),
+      (s) =>
+          s.startsWith('Gallery:') ||
+          s.contains('permission_denied') ||
+          s.contains('permissionDenied'),
       const Duration(seconds: 30),
     );
     // ignore: avoid_print

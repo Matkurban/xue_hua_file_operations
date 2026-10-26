@@ -191,6 +191,8 @@ iOS 模拟器没有相机（返回 `ErrorCode.unsupported`），请使用真机�
 
 **UI 测试钩子（macOS 与 iOS）：** 原生相机界面不在 Flutter 控件树内，`flutter_driver` 无法点击。以环境变量 `XUE_HUA_CAMERA_TEST_AUTO=1` 启动应用后，插件会在相机出现约 1.5 秒后自动按下快门 / 录制，并在录制真正开始 2 秒后停止。仍使用真实摄像头；未设置该变量时不会有任何动作。macOS 上 `flutter drive -d macos` 会传递该变量；iOS 模拟器请使用 `SIMCTL_CHILD_XUE_HUA_CAMERA_TEST_AUTO=1`（注意：iOS 模拟器没有可用的相机管线，真实拍摄只能在真机上测试）。参见 `example/test_driver/`。
 
+自动化测试可跳过原生 `NSOpenPanel` / `NSSavePanel`（环境变量与 Linux 相同）：`XUE_HUA_TEST_PICK_FILE`、`XUE_HUA_TEST_PICK_FILES`（冒号分隔）、`XUE_HUA_TEST_PICK_DIR`、`XUE_HUA_TEST_SAVE_FILE`（字面量 `CANCEL` 表示取消），以及 `XUE_HUA_TEST_OPEN_FILE=skip`。示例 Debug 权限已允许 `/tmp` 与 `/var/folders` 绝对路径读写，以便沙盒内读取 driver 夹具文件。见 `example/test_driver/`。
+
 与 iOS 相同：系统只弹一次授权框。macOS 始终申请 PhotoKit `readWrite`（忽略 `forAlbum`）：系统设置 → 隐私与安全性 → 照片只列出读/写客户端。`addOnly` 不会出现在该列表，且可能在从未弹框时就返回 `.denied`。
 
 **启动方式（TCC 责任进程）：** macOS 会把照片授权框记到父进程上。若从 Cursor / VS Code 执行 `flutter run -d macos`，系统可能静默拒绝，并且 **不会** 把本应用列在「照片」里。请用系统「终端」测试，或先构建再打开 `.app`：

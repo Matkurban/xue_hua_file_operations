@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'test_env_stub.dart' if (dart.library.io) 'test_env_io.dart' as test_env;
 import 'package:material_ui/material_ui.dart';
 import 'package:xue_hua_file_operations/xue_hua_file_operations.dart';
 import 'package:xue_hua_file_operations_example/app_theme.dart';
@@ -283,6 +284,10 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
 
   Future<void> _offerOpenSettings(String message) async {
     if (!mounted) return;
+    // Modal Settings dialog would block later flutter_driver taps.
+    if (test_env.hasAutomatedTestEnv) {
+      return;
+    }
     final open = await showDialog<bool>(
       context: context,
       builder: (context) {

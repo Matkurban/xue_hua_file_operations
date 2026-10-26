@@ -125,6 +125,13 @@ enum GallerySaver {
         completion: @escaping (PHAuthorizationStatus) -> Void
     ) {
         let apply = {
+            // Already decided: return immediately. Re-requesting can hang under
+            // some TCC parent-process / automation setups.
+            let existing = PHPhotoLibrary.authorizationStatus(for: level)
+            if existing != .notDetermined {
+                completion(existing)
+                return
+            }
             PHPhotoLibrary.requestAuthorization(for: level) { newStatus in
                 DispatchQueue.main.async {
                     completion(newStatus)

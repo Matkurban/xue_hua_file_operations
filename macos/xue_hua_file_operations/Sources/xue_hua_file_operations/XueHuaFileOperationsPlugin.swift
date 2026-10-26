@@ -45,6 +45,35 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin {
         }
     }
 
+    // Automated UI-test hooks (skip native NSOpenPanel / NSSavePanel). Set by
+    // flutter_driver / the launch shell; no-ops when unset:
+    //   XUE_HUA_TEST_PICK_FILE=<abs path>              single-file pick
+    //   XUE_HUA_TEST_PICK_FILES=<a>:<b>                multi-file (colon, like Linux)
+    //   XUE_HUA_TEST_PICK_DIR=<abs dir>                directory pick
+    //   XUE_HUA_TEST_SAVE_FILE=<abs path>              save-as destination
+    //   XUE_HUA_TEST_OPEN_FILE=skip                    validate path, do not open
+    // Any pick/save value may be the literal "CANCEL" to simulate cancel.
+    private static let testPickFileEnv = "XUE_HUA_TEST_PICK_FILE"
+    private static let testPickFilesEnv = "XUE_HUA_TEST_PICK_FILES"
+    private static let testPickDirEnv = "XUE_HUA_TEST_PICK_DIR"
+    private static let testSaveFileEnv = "XUE_HUA_TEST_SAVE_FILE"
+    private static let testOpenFileEnv = "XUE_HUA_TEST_OPEN_FILE"
+
+    private static func env(_ name: String) -> String? {
+        let value = ProcessInfo.processInfo.environment[name]
+        guard let value, !value.isEmpty else { return nil }
+        return value
+    }
+
+    private static func testHookIsCancel(_ value: String) -> Bool {
+        value == "CANCEL"
+    }
+
+    private static func splitColonPaths(_ value: String) -> [String] {
+        value.split(separator: ":", omittingEmptySubsequences: true).map(String.init)
+    }
+
+
     private func contentTypes(from args: [String: Any]?) -> [UTType] {
         var types: [UTType] = []
         if let mimes = args?["allowedMimeTypes"] as? [String] {
@@ -84,6 +113,86 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin {
         let args = call.arguments as? [String: Any]
         let withData = args?["withData"] as? Bool ?? false
         let maxFiles = args?["maxFiles"] as? Int
+
+        if directory {
+            if let hook = Self.env(Self.testPickDirEnv) {
+                if Self.testHookIsCancel(hook) {
+                    result(nil)
+                    return
+                }
+                let url = URL(fileURLWithPath: hook)
+                result([
+                    "path": url.path,
+                    "name": url.lastPathComponent,
+                    "identifier": url.absoluteString,
+                ])
+                return
+            }
+        } else {
+            let hookEnv = multiple ? Self.testPickFilesEnv : Self.testPickFileEnv
+            var hook = Self.env(hookEnv)
+            // Allow the single-file env for multi when the multi env is unset.
+            if multiple && hook == nil {
+                hook = Self.env(Self.testPickFileEnv)
+            }
+            if let hook {
+                if Self.testHookIsCancel(hook) {
+                    result(nil)
+                    return
+                }
+                let paths = Self.splitColonPaths(hook)
+                if paths.isEmpty {
+                    result(nil)
+                    return
+                }
+                if !multiple {
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        do {
+                            let file = try Self.fileMap(
+                                from: URL(fileURLWithPath: paths[0]),
+                                withData: withData
+                            )
+                            DispatchQueue.main.async { result(["file": file]) }
+                        } catch {
+                            DispatchQueue.main.async {
+                                result(FlutterError(
+                                    code: "io_error",
+                                    message: error.localizedDescription,
+                                    details: nil
+                                ))
+                            }
+                        }
+                    }
+                    return
+                }
+                if let max = maxFiles, paths.count > max {
+                    result(FlutterError(
+                        code: "too_many_files",
+                        message: "Selected \(paths.count) files but maxFiles is \(max)",
+                        details: ["selected": paths.count, "maxFiles": max]
+                    ))
+                    return
+                }
+                DispatchQueue.global(qos: .userInitiated).async {
+                    do {
+                        let files = try paths.map {
+                            try Self.fileMap(from: URL(fileURLWithPath: $0), withData: withData)
+                        }
+                        DispatchQueue.main.async { result(["files": files]) }
+                    } catch {
+                        DispatchQueue.main.async {
+                            result(FlutterError(
+                                code: "io_error",
+                                message: error.localizedDescription,
+                                details: nil
+                            ))
+                        }
+                    }
+                }
+                return
+            }
+        }
+
         let panel = NSOpenPanel()
         panel.canChooseFiles = !directory
         panel.canChooseDirectories = directory
@@ -168,24 +277,7 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin {
             return
         }
 
-        let panel = NSSavePanel()
-        panel.canCreateDirectories = true
-        panel.nameFieldStringValue = fileName
-        if let title = args?["dialogTitle"] as? String {
-            panel.message = title
-        }
-        if let exts = args?["allowedExtensions"] as? [String], !exts.isEmpty {
-            panel.allowedContentTypes = exts.compactMap {
-                let clean = $0.hasPrefix(".") ? String($0.dropFirst()) : $0
-                return UTType(filenameExtension: clean)
-            }
-        }
-
-        panel.begin { response in
-            guard response == .OK, let url = panel.url else {
-                result(nil)
-                return
-            }
+        let writeDest: (URL) -> Void = { url in
             do {
                 if let flutterData = flutterData {
                     try flutterData.data.write(to: url, options: .atomic)
@@ -199,8 +291,6 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin {
                         ))
                         return
                     }
-                    // Sandbox: the source may be a security-scoped URL from an
-                    // earlier pick; accessing is a no-op for regular URLs.
                     let access = source.startAccessingSecurityScopedResource()
                     defer {
                         if access {
@@ -219,6 +309,36 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin {
             } catch {
                 result(FlutterError(code: "io_error", message: error.localizedDescription, details: nil))
             }
+        }
+
+        if let hook = Self.env(Self.testSaveFileEnv) {
+            if Self.testHookIsCancel(hook) {
+                result(nil)
+                return
+            }
+            writeDest(URL(fileURLWithPath: hook))
+            return
+        }
+
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = fileName
+        if let title = args?["dialogTitle"] as? String {
+            panel.message = title
+        }
+        if let exts = args?["allowedExtensions"] as? [String], !exts.isEmpty {
+            panel.allowedContentTypes = exts.compactMap {
+                let clean = $0.hasPrefix(".") ? String($0.dropFirst()) : $0
+                return UTType(filenameExtension: clean)
+            }
+        }
+
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else {
+                result(nil)
+                return
+            }
+            writeDest(url)
         }
     }
 
@@ -243,6 +363,15 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin {
 
         guard let url = url else {
             result(FlutterError(code: "not_found", message: "Invalid file URL", details: nil))
+            return
+        }
+
+        if Self.env(Self.testOpenFileEnv) == "skip" {
+            if !FileManager.default.fileExists(atPath: url.path) {
+                result(FlutterError(code: "not_found", message: "File not found", details: nil))
+                return
+            }
+            result(true)
             return
         }
 

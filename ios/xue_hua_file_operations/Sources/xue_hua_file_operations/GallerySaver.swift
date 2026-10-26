@@ -129,6 +129,13 @@ enum GallerySaver {
         completion: @escaping (PHAuthorizationStatus) -> Void
     ) {
         let apply = {
+            // Already decided: return immediately. Calling requestAuthorization
+            // again can hang on some iOS Simulator / TCC setups.
+            let existing = currentStatus(forAlbum: forAlbum)
+            if existing != .notDetermined {
+                completion(existing)
+                return
+            }
             if #available(iOS 14.0, *) {
                 PHPhotoLibrary.requestAuthorization(for: forAlbum ? .readWrite : .addOnly) {
                     newStatus in

@@ -1,3 +1,10 @@
+## 1.5.3
+
+* macOS: add the same automated dialog test hooks as Linux/Windows (`XUE_HUA_TEST_PICK_FILE` / `PICK_FILES` / `PICK_DIR` / `SAVE_FILE` / `OPEN_FILE=skip`, literal `CANCEL`) so `flutter_driver` can cover pick / save / open without native choosers. Multi-file paths are colon-separated (like Linux).
+* Example: Debug App Sandbox temporary exceptions for `/tmp` and `/var/folders` so dialog hooks can read driver fixtures; skip the Photos Settings dialog under automation envs so later taps are not blocked; `flutter_driver` dismisses the dialog when it still appears and accepts `permission_denied` for `saveToGallery` when Photos TCC is denied for the launch parent.
+* iOS / macOS: short-circuit `requestGalleryPermission` / gallery save when PhotoKit status is already determined — calling `PHPhotoLibrary.requestAuthorization` again could hang on some iOS Simulator / TCC automation setups.
+* Docs: document macOS dialog hooks in English and Chinese READMEs; mention macOS colon-separated multi-file paths in the example driver header.
+
 ## 1.5.2
 
 * Windows: add the same automated dialog test hooks as Linux (`XUE_HUA_TEST_PICK_FILE` / `PICK_FILES` / `PICK_DIR` / `SAVE_FILE` / `OPEN_FILE=skip`, literal `CANCEL`) so `flutter_driver` can cover pick / save / open without native choosers. Multi-file paths are semicolon-separated on Windows.

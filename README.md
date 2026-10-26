@@ -189,6 +189,8 @@ A denied camera permission throws `ErrorCode.permissionDenied` (System Settings 
 
 **UI-test hook (macOS and iOS):** the native camera UI is outside Flutter's widget tree, so `flutter_driver` cannot press its buttons. Start the app with the environment variable `XUE_HUA_CAMERA_TEST_AUTO=1` and the plugin presses the shutter / Record about 1.5 s after the camera appears and stops a recording 2 s after it started. The real camera is still used; without the variable nothing happens. On macOS `flutter drive -d macos` passes the variable through; for the iOS simulator use `SIMCTL_CHILD_XUE_HUA_CAMERA_TEST_AUTO=1` (note: the iOS simulator has no working camera pipeline, so real capture can only be tested on a device). See `example/test_driver/`.
 
+Dialog-based APIs can skip the native `NSOpenPanel` / `NSSavePanel` in automated runs (same env vars as Linux): `XUE_HUA_TEST_PICK_FILE`, `XUE_HUA_TEST_PICK_FILES` (colon-separated), `XUE_HUA_TEST_PICK_DIR`, `XUE_HUA_TEST_SAVE_FILE` (literal `CANCEL` simulates cancel), and `XUE_HUA_TEST_OPEN_FILE=skip`. The example Debug entitlements allow absolute-path access under `/tmp` and `/var/folders` so hooks can read driver fixtures inside the App Sandbox. See `example/test_driver/`.
+
 Without the Photos entitlement, PhotoKit often returns `.denied` immediately and never shows a prompt.
 
 Same one-shot prompt rule as iOS. macOS always requests PhotoKit `readWrite` (`forAlbum` is ignored): System Settings → Privacy & Security → Photos only lists read/write clients. `addOnly` does not appear in that list and may return `.denied` without a prompt.
