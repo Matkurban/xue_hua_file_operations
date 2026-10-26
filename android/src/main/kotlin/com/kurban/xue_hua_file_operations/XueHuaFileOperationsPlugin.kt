@@ -91,6 +91,162 @@ class XueHuaFileOperationsPlugin :
         val albumName: String?,
     )
 
+
+    // ------------------------------------------------------------------
+    // Automated dialog hooks (no-op unless set). Same names as desktop:
+    //   XUE_HUA_TEST_PICK_FILE / PICK_FILES / PICK_DIR / SAVE_FILE / OPEN_FILE
+    // Values are read from System.getenv first, then from
+    // /data/local/tmp/<NAME> (adb can write that path). Literal CANCEL
+    // simulates a cancelled chooser. Multi-file paths are colon-separated.
+    // ------------------------------------------------------------------
+    private fun testHook(name: String): String? {
+        System.getenv(name)?.takeIf { it.isNotEmpty() }?.let { return it }
+        return try {
+            val f = File(TEST_HOOK_DIR, name)
+            if (f.canRead()) f.readText().trim().takeIf { it.isNotEmpty() } else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun testHookIsCancel(value: String): Boolean =
+        value.equals("CANCEL", ignoreCase = false)
+
+    private fun splitColonPaths(value: String): List<String> =
+        value.split(':').map { it.trim() }.filter { it.isNotEmpty() }
+
+    private fun fileMapFromPath(path: String, withData: Boolean): Map<String, Any?> {
+        val file = File(path)
+        if (!file.exists()) {
+            throw FileNotFoundException("Hook file not found: $path")
+        }
+        val bytes = if (withData) file.readBytes() else null
+        val size = if (withData) (bytes?.size?.toLong() ?: file.length()) else file.length()
+        return mapOf(
+            "name" to file.name,
+            "size" to size,
+            "path" to file.absolutePath,
+            "bytes" to bytes,
+            "identifier" to "file://${file.absolutePath}"
+        )
+    }
+
+    /** Returns true when a hook handled the call (result already answered). */
+    private fun tryPickHook(multiple: Boolean, withData: Boolean, maxFiles: Int?, result: Result): Boolean {
+        var hook = if (multiple) testHook(TEST_PICK_FILES) else testHook(TEST_PICK_FILE)
+        if (multiple && hook == null) hook = testHook(TEST_PICK_FILE)
+        if (hook == null) return false
+        if (testHookIsCancel(hook)) {
+            result.success(null)
+            return true
+        }
+        val paths = splitColonPaths(hook)
+        if (paths.isEmpty()) {
+            result.success(null)
+            return true
+        }
+        try {
+            if (!multiple) {
+                result.success(mapOf("file" to fileMapFromPath(paths[0], withData)))
+                return true
+            }
+            if (maxFiles != null && paths.size > maxFiles) {
+                result.error(
+                    "too_many_files",
+                    "Selected ${paths.size} files but maxFiles is $maxFiles",
+                    mapOf("selected" to paths.size, "maxFiles" to maxFiles)
+                )
+                return true
+            }
+            val files = paths.map { fileMapFromPath(it, withData) }
+            result.success(mapOf("files" to files))
+            return true
+        } catch (e: Exception) {
+            result.error("io_error", e.message, null)
+            return true
+        }
+    }
+
+    private fun tryPickDirHook(result: Result): Boolean {
+        val hook = testHook(TEST_PICK_DIR) ?: return false
+        if (testHookIsCancel(hook)) {
+            result.success(null)
+            return true
+        }
+        val dir = File(hook)
+        if (!dir.exists() || !dir.isDirectory) {
+            result.error("not_found", "Hook directory not found: $hook", null)
+            return true
+        }
+        result.success(
+            mapOf(
+                "path" to dir.absolutePath,
+                "name" to dir.name,
+                "identifier" to "file://${dir.absolutePath}"
+            )
+        )
+        return true
+    }
+
+    private fun trySaveHook(call: MethodCall, result: Result): Boolean {
+        val hook = testHook(TEST_SAVE_FILE) ?: return false
+        if (testHookIsCancel(hook)) {
+            result.success(null)
+            return true
+        }
+        val fileName = call.argument<String>("fileName") ?: "file"
+        val bytes = call.argument<ByteArray>("bytes")
+        val sourcePath = call.argument<String>("sourcePath")
+        if (bytes == null && sourcePath.isNullOrEmpty()) {
+            result.error("invalid_args", "Either bytes or sourcePath must be provided", null)
+            return true
+        }
+        thread {
+            try {
+                val dest = File(hook)
+                dest.parentFile?.mkdirs()
+                if (bytes != null) {
+                    dest.writeBytes(bytes)
+                } else {
+                    val source = File(sourcePath!!)
+                    if (!source.exists()) throw FileNotFoundException("File not found: $sourcePath")
+                    source.copyTo(dest, overwrite = true)
+                }
+                mainHandler.post {
+                    result.success(mapOf("path" to dest.absolutePath, "name" to fileName))
+                }
+            } catch (e: FileNotFoundException) {
+                mainHandler.post { result.error("not_found", e.message, null) }
+            } catch (e: Exception) {
+                mainHandler.post { result.error("io_error", e.message, null) }
+            }
+        }
+        return true
+    }
+
+    private fun tryOpenHook(path: String?, identifier: String?, result: Result): Boolean {
+        val hook = testHook(TEST_OPEN_FILE) ?: return false
+        if (hook != "skip") return false
+        val candidate = when {
+            !path.isNullOrEmpty() -> path
+            !identifier.isNullOrEmpty() && identifier.startsWith("file://") ->
+                identifier.removePrefix("file://")
+            !identifier.isNullOrEmpty() && !identifier.contains("://") -> identifier
+            else -> null
+        }
+        if (candidate.isNullOrEmpty()) {
+            result.error("invalid_args", "Either path or identifier must be provided", null)
+            return true
+        }
+        if (!File(candidate).exists()) {
+            result.error("not_found", "File not found: $candidate", null)
+            return true
+        }
+        result.success(true)
+        return true
+    }
+
+
     /** CreateDocument with dynamic MIME type + suggested file name. */
     private class CreateDocumentContract :
         ActivityResultContract<Pair<String, String>, Uri?>() {
@@ -190,10 +346,14 @@ class XueHuaFileOperationsPlugin :
     }
 
     private fun pickFile(call: MethodCall, result: Result) {
+        val withData = call.argument<Boolean>("withData") ?: false
+        if (tryPickHook(multiple = false, withData = withData, maxFiles = null, result = result)) {
+            return
+        }
         ensureActivity(result) ?: return
         val photoRequest = photoPickerRequest(call)
         pendingResult = result
-        pendingWithData = call.argument<Boolean>("withData") ?: false
+        pendingWithData = withData
         pendingMaxFiles = null
         if (photoRequest != null) {
             val launcher = pickVisualMediaLauncher
@@ -210,11 +370,16 @@ class XueHuaFileOperationsPlugin :
     }
 
     private fun pickFiles(call: MethodCall, result: Result) {
+        val withData = call.argument<Boolean>("withData") ?: false
+        val maxFiles = call.argument<Int>("maxFiles")
+        if (tryPickHook(multiple = true, withData = withData, maxFiles = maxFiles, result = result)) {
+            return
+        }
         ensureActivity(result) ?: return
         val photoRequest = photoPickerRequest(call)
         pendingResult = result
-        pendingWithData = call.argument<Boolean>("withData") ?: false
-        pendingMaxFiles = call.argument<Int>("maxFiles")
+        pendingWithData = withData
+        pendingMaxFiles = maxFiles
         if (photoRequest != null) {
             // Photo Picker enforces maxFiles == 1 via the single-select
             // contract; larger limits are validated after selection.
@@ -240,6 +405,7 @@ class XueHuaFileOperationsPlugin :
     }
 
     private fun pickDirectory(result: Result) {
+        if (tryPickDirHook(result)) return
         ensureActivity(result) ?: return
         val launcher = openDocumentTreeLauncher ?: return
         pendingResult = result
@@ -247,6 +413,7 @@ class XueHuaFileOperationsPlugin :
     }
 
     private fun saveFile(call: MethodCall, result: Result) {
+        if (trySaveHook(call, result)) return
         ensureActivity(result) ?: return
         val launcher = createDocumentLauncher ?: return
         val fileName = call.argument<String>("fileName") ?: "file"
@@ -483,13 +650,14 @@ class XueHuaFileOperationsPlugin :
     }
 
     private fun openFile(call: MethodCall, result: Result) {
+        val path = call.argument<String>("path")
+        val identifier = call.argument<String>("identifier")
+        if (tryOpenHook(path, identifier, result)) return
         val act = activity
         if (act == null) {
             result.error("unknown", "Activity is not available", null)
             return
         }
-        val path = call.argument<String>("path")
-        val identifier = call.argument<String>("identifier")
 
         if ((path.isNullOrEmpty()) && (identifier.isNullOrEmpty())) {
             result.error("invalid_args", "Either path or identifier must be provided", null)
@@ -1225,5 +1393,13 @@ class XueHuaFileOperationsPlugin :
         private const val KEY_CAPTURE_MAX_WIDTH = "capture_max_width"
         private const val KEY_CAPTURE_MAX_HEIGHT = "capture_max_height"
         private const val KEY_CAPTURE_QUALITY = "capture_image_quality"
+
+        // Dialog test hooks (also readable from /data/local/tmp/<NAME>).
+        private const val TEST_PICK_FILE = "XUE_HUA_TEST_PICK_FILE"
+        private const val TEST_PICK_FILES = "XUE_HUA_TEST_PICK_FILES"
+        private const val TEST_PICK_DIR = "XUE_HUA_TEST_PICK_DIR"
+        private const val TEST_SAVE_FILE = "XUE_HUA_TEST_SAVE_FILE"
+        private const val TEST_OPEN_FILE = "XUE_HUA_TEST_OPEN_FILE"
+        private const val TEST_HOOK_DIR = "/data/local/tmp"
     }
 }

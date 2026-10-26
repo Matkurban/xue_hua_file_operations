@@ -8,11 +8,12 @@
 //   XUE_HUA_EXPECT=unsupported  capture must report `unsupported`
 //   unset / any                 only check that the app answers
 //
-// Desktop dialog hooks (skip native choosers for automated runs):
+// Desktop / Android dialog hooks (skip native choosers for automated runs):
 //   XUE_HUA_TEST_PICK_FILE / XUE_HUA_TEST_PICK_FILES / XUE_HUA_TEST_PICK_DIR
 //   XUE_HUA_TEST_SAVE_FILE / XUE_HUA_TEST_OPEN_FILE=skip
 //   Literal CANCEL on a pick/save hook simulates cancel.
-//   Multi-file paths: colon-separated on Linux/macOS, semicolon-separated on Windows.
+//   Multi-file paths: colon-separated on Linux/macOS/Android, semicolon on Windows.
+//   On Android the same names are also read from /data/local/tmp/<NAME> (adb).
 //
 // Optional (Android, where the captured file lives on the device):
 //   XUE_HUA_ADB=<path to adb>  XUE_HUA_ADB_SERIAL=<serial>  XUE_HUA_APP_ID=<applicationId>
@@ -99,20 +100,33 @@ void main() {
   Future<File> localCopy(String path) async {
     final adb = Platform.environment['XUE_HUA_ADB'];
     final appId = Platform.environment['XUE_HUA_APP_ID'];
-    if (adb != null && appId != null && !File(path).existsSync()) {
+    if (adb != null && !File(path).existsSync()) {
       final serial = Platform.environment['XUE_HUA_ADB_SERIAL'];
       final out = File(
         '${Directory.systemTemp.path}/driver_${path.split('/').last}',
       );
-      final r = await Process.run(adb, [
-        if (serial != null) ...['-s', serial],
-        'exec-out',
-        'run-as',
-        appId,
-        'cat',
-        path,
-      ], stdoutEncoding: null);
-      expect(r.exitCode, 0, reason: 'adb run-as cat failed: ${r.stderr}');
+      // World-readable test fixtures under /data/local/tmp need plain cat;
+      // app-private cache paths need run-as.
+      final List<String> args;
+      if (path.startsWith('/data/local/tmp/') || appId == null) {
+        args = [
+          if (serial != null) ...['-s', serial],
+          'exec-out',
+          'cat',
+          path,
+        ];
+      } else {
+        args = [
+          if (serial != null) ...['-s', serial],
+          'exec-out',
+          'run-as',
+          appId,
+          'cat',
+          path,
+        ];
+      }
+      final r = await Process.run(adb, args, stdoutEncoding: null);
+      expect(r.exitCode, 0, reason: 'adb cat failed: ${r.stderr}');
       await out.writeAsBytes(r.stdout as List<int>);
       return out;
     }
@@ -237,7 +251,8 @@ void main() {
       'hello.txt',
     );
     final info = await capturedInfo();
-    expect(File(info.path).existsSync(), isTrue);
+    final file = await localCopy(info.path);
+    expect(await file.length(), greaterThan(0));
     expect(info.size, greaterThan(0));
     // ignore: avoid_print
     print('EVIDENCE pickFile ${info.path} size=${info.size}');
@@ -272,12 +287,34 @@ void main() {
     // Uses selected file from prior pick, or demo bytes fallback.
     await driver.tap(find.byValueKey('saveFile'));
     await waitStatus((s) => s.startsWith('Saved:'), const Duration(seconds: 20));
-    expect(saveDest.existsSync(), isTrue, reason: 'hook destination written');
-    expect(saveDest.lengthSync(), greaterThan(0));
-    // ignore: avoid_print
-    print(
-      'EVIDENCE saveFile ${saveDest.path} size=${saveDest.lengthSync()} status=${await status()}',
-    );
+    final adb = Platform.environment['XUE_HUA_ADB'];
+    final serial = Platform.environment['XUE_HUA_ADB_SERIAL'];
+    if (adb != null && !saveDest.existsSync()) {
+      // Android: hook path lives on the device — pull it for verification.
+      final pulled = File(
+        '${Directory.systemTemp.path}/driver_saved_out.txt',
+      );
+      final r = await Process.run(adb, [
+        if (serial != null) ...['-s', serial],
+        'pull',
+        saveDest.path,
+        pulled.path,
+      ]);
+      expect(r.exitCode, 0, reason: 'adb pull save dest failed: ${r.stderr}');
+      expect(pulled.existsSync(), isTrue);
+      expect(pulled.lengthSync(), greaterThan(0));
+      // ignore: avoid_print
+      print(
+        'EVIDENCE saveFile ${saveDest.path} size=${pulled.lengthSync()} status=${await status()}',
+      );
+    } else {
+      expect(saveDest.existsSync(), isTrue, reason: 'hook destination written');
+      expect(saveDest.lengthSync(), greaterThan(0));
+      // ignore: avoid_print
+      print(
+        'EVIDENCE saveFile ${saveDest.path} size=${saveDest.lengthSync()} status=${await status()}',
+      );
+    }
   });
 
   test('capturePhoto', timeout: slow, () async {
