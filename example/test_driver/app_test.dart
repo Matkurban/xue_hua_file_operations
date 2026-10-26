@@ -1,6 +1,6 @@
 // Run with (see README of the example):
 //   flutter drive --driver=test_driver/app_test.dart \
-//     --target=test_driver/app.dart -d <linux|macos|android-emulator|ios-sim>
+//     --target=test_driver/app.dart -d <linux|windows|macos|android-emulator|ios-sim>
 //
 // Environment (read by this driver process AND the app under test):
 //   XUE_HUA_EXPECT=captured     camera capture must succeed (Linux test
@@ -8,10 +8,11 @@
 //   XUE_HUA_EXPECT=unsupported  capture must report `unsupported`
 //   unset / any                 only check that the app answers
 //
-// Linux dialog hooks (skip native GTK choosers for automated runs):
+// Desktop dialog hooks (skip native choosers for automated runs):
 //   XUE_HUA_TEST_PICK_FILE / XUE_HUA_TEST_PICK_FILES / XUE_HUA_TEST_PICK_DIR
 //   XUE_HUA_TEST_SAVE_FILE / XUE_HUA_TEST_OPEN_FILE=skip
 //   Literal CANCEL on a pick/save hook simulates cancel.
+//   Multi-file paths: colon-separated on Linux, semicolon-separated on Windows.
 //
 // Optional (Android, where the captured file lives on the device):
 //   XUE_HUA_ADB=<path to adb>  XUE_HUA_ADB_SERIAL=<serial>  XUE_HUA_APP_ID=<applicationId>

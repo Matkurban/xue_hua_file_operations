@@ -215,6 +215,8 @@ See the example app entitlements under `example/macos/Runner/`.
 
 **Permissions:** None. Uses native system file and folder dialogs. `saveToGallery` writes to the user Pictures or Videos known folder. No extra manifest entries are required for this plugin.
 
+Dialog-based APIs can skip the native chooser in automated runs (same env vars as Linux): `XUE_HUA_TEST_PICK_FILE`, `XUE_HUA_TEST_PICK_FILES` (semicolon-separated on Windows because of drive letters), `XUE_HUA_TEST_PICK_DIR`, `XUE_HUA_TEST_SAVE_FILE` (literal `CANCEL` simulates cancel), and `XUE_HUA_TEST_OPEN_FILE=skip`. See `example/test_driver/`.
+
 ### Linux
 
 **Camera:** `capturePhoto` / `captureVideo` open a GTK preview dialog fed by GStreamer (`v4l2src`). Photos are JPEG, videos are MP4 (H.264 via `x264enc` or `openh264enc`, plus `h264parse` from the *bad* plugins and `mp4mux`) or WebM (VP8) when no H.264 encoder / parser is installed. The build needs the GStreamer development packages (without them the plugin still builds and the capture methods throw `ErrorCode.unsupported`); at runtime a V4L2 camera is required (`ErrorCode.unsupported` otherwise, `ErrorCode.permissionDenied` when `/dev/video*` cannot be opened - add the user to the `video` group).

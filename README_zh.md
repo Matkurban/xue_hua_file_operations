@@ -215,6 +215,9 @@ tccutil reset Photos com.your.bundle.id
 
 **权限：** 无需额外权限。使用系统原生文件 / 文件夹对话框。`saveToGallery` 写入用户 Pictures 或 Videos 已知文件夹。无需为本插件添加额外清单配置。
 
+
+自动化测试可跳过原生文件对话框（环境变量与 Linux 相同）：`XUE_HUA_TEST_PICK_FILE`、`XUE_HUA_TEST_PICK_FILES`（Windows 用分号分隔，因盘符含冒号）、`XUE_HUA_TEST_PICK_DIR`、`XUE_HUA_TEST_SAVE_FILE`（字面量 `CANCEL` 表示取消），以及 `XUE_HUA_TEST_OPEN_FILE=skip`。见 `example/test_driver/`。
+
 ### Linux
 
 **相机：** `capturePhoto` / `captureVideo` 会弹出由 GStreamer（`v4l2src`）驱动的 GTK 预览对话框。照片为 JPEG；视频为 MP4（`x264enc` 或 `openh264enc` 的 H.264，另需 *bad* 插件集中的 `h264parse` 以及 `mp4mux`），缺少 H.264 编码器 / 解析器时为 WebM（VP8）。构建需要 GStreamer 开发包（缺失时插件仍可构建，但相机方法抛出 `ErrorCode.unsupported`）；运行时需要 V4L2 摄像头（没有则 `ErrorCode.unsupported`；无法打开 `/dev/video*` 时 `ErrorCode.permissionDenied`，请将用户加入 `video` 组）。

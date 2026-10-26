@@ -297,6 +297,50 @@ EncodableMap FileMapFromPath(const std::wstring &path, bool with_data) {
   return map;
 }
 
+// Automated UI-test hooks (skip native Win32 file dialogs). Set by
+// flutter_driver / the launch shell; no-ops when unset:
+//   XUE_HUA_TEST_PICK_FILE=<abs path>              single-file pick
+//   XUE_HUA_TEST_PICK_FILES=<a>;<b>                multi-file (semicolon)
+//   XUE_HUA_TEST_PICK_DIR=<abs dir>                directory pick
+//   XUE_HUA_TEST_SAVE_FILE=<abs path>              save-as destination
+//   XUE_HUA_TEST_OPEN_FILE=skip                    validate path, do not open
+// Any pick/save value may be the literal "CANCEL" to simulate cancel.
+constexpr wchar_t kTestPickFileEnv[] = L"XUE_HUA_TEST_PICK_FILE";
+constexpr wchar_t kTestPickFilesEnv[] = L"XUE_HUA_TEST_PICK_FILES";
+constexpr wchar_t kTestPickDirEnv[] = L"XUE_HUA_TEST_PICK_DIR";
+constexpr wchar_t kTestSaveFileEnv[] = L"XUE_HUA_TEST_SAVE_FILE";
+constexpr wchar_t kTestOpenFileEnv[] = L"XUE_HUA_TEST_OPEN_FILE";
+
+std::optional<std::wstring> ReadEnvW(const wchar_t *name) {
+  DWORD needed = GetEnvironmentVariableW(name, nullptr, 0);
+  if (needed == 0) return std::nullopt;
+  std::wstring value(needed, L'\0');
+  DWORD written = GetEnvironmentVariableW(name, value.data(), needed);
+  if (written == 0 || written >= needed) return std::nullopt;
+  value.resize(written);
+  return value;
+}
+
+bool TestHookIsCancel(const std::wstring &value) {
+  return value == L"CANCEL";
+}
+
+std::vector<std::wstring> SplitHookPaths(const std::wstring &value) {
+  std::vector<std::wstring> out;
+  if (value.empty()) return out;
+  size_t start = 0;
+  while (start <= value.size()) {
+    size_t pos = value.find(L';', start);
+    if (pos == std::wstring::npos) {
+      if (start < value.size()) out.push_back(value.substr(start));
+      break;
+    }
+    if (pos > start) out.push_back(value.substr(start, pos - start));
+    start = pos + 1;
+  }
+  return out;
+}
+
 HWND GetRootWindow(flutter::PluginRegistrarWindows *registrar) {
   if (!registrar || !registrar->GetView()) {
     return nullptr;
@@ -311,6 +355,48 @@ void PickFiles(
   bool with_data = GetBoolArg(args, "withData", false);
   auto max_files = GetIntArg(args, "maxFiles");
   std::string title = GetStringArg(args, "dialogTitle");
+
+  auto hook = multiple ? ReadEnvW(kTestPickFilesEnv) : ReadEnvW(kTestPickFileEnv);
+  // Allow the single-file env for multi when the multi env is unset.
+  if (multiple && !hook.has_value()) hook = ReadEnvW(kTestPickFileEnv);
+  if (hook.has_value()) {
+    if (TestHookIsCancel(*hook)) {
+      result->Success(EncodableValue());
+      return;
+    }
+    auto paths = SplitHookPaths(*hook);
+    if (paths.empty()) {
+      result->Success(EncodableValue());
+      return;
+    }
+    if (!multiple) {
+      EncodableMap wrapper;
+      wrapper[EncodableValue("file")] =
+          EncodableValue(FileMapFromPath(paths[0], with_data));
+      result->Success(EncodableValue(wrapper));
+      return;
+    }
+    if (max_files.has_value() &&
+        static_cast<int64_t>(paths.size()) > max_files.value()) {
+      EncodableMap details;
+      details[EncodableValue("selected")] =
+          EncodableValue(static_cast<int32_t>(paths.size()));
+      details[EncodableValue("maxFiles")] =
+          EncodableValue(static_cast<int32_t>(max_files.value()));
+      result->Error("too_many_files",
+                    "Selected more files than maxFiles allows",
+                    EncodableValue(details));
+      return;
+    }
+    EncodableList files;
+    for (const auto &p : paths) {
+      files.push_back(EncodableValue(FileMapFromPath(p, with_data)));
+    }
+    EncodableMap wrapper;
+    wrapper[EncodableValue("files")] = EncodableValue(files);
+    result->Success(EncodableValue(wrapper));
+    return;
+  }
 
   IFileOpenDialog *dialog = nullptr;
   HRESULT hr =
@@ -417,6 +503,22 @@ void PickDirectory(
     flutter::PluginRegistrarWindows *registrar, const EncodableMap *args,
     std::unique_ptr<flutter::MethodResult<EncodableValue>> result) {
   std::string title = GetStringArg(args, "dialogTitle");
+
+  if (auto hook = ReadEnvW(kTestPickDirEnv)) {
+    if (TestHookIsCancel(*hook)) {
+      result->Success(EncodableValue());
+      return;
+    }
+    std::filesystem::path p(*hook);
+    EncodableMap map;
+    map[EncodableValue("path")] = EncodableValue(WideToUtf8(*hook));
+    map[EncodableValue("name")] =
+        EncodableValue(WideToUtf8(p.filename().wstring()));
+    map[EncodableValue("identifier")] =
+        EncodableValue(FileUriFromWidePath(*hook));
+    result->Success(EncodableValue(map));
+    return;
+  }
   IFileOpenDialog *dialog = nullptr;
   HRESULT hr =
       CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
@@ -485,6 +587,52 @@ void SaveFile(flutter::PluginRegistrarWindows *registrar,
     return;
   }
 
+  auto write_dest = [&](const std::wstring &dest_wide) -> bool {
+    try {
+      std::filesystem::path dest(dest_wide);
+      if (bytes) {
+        std::ofstream out(dest, std::ios::binary);
+        if (!out) {
+          result->Error("io_error", "Unable to open destination file");
+          return false;
+        }
+        out.write(reinterpret_cast<const char *>(bytes->data()),
+                  static_cast<std::streamsize>(bytes->size()));
+        out.close();
+        if (out.fail()) {
+          result->Error("io_error", "Failed to write destination file");
+          return false;
+        }
+      } else {
+        std::filesystem::path source(Utf8ToWide(source_path));
+        if (!std::filesystem::exists(source)) {
+          result->Error("not_found", "File not found: " + source_path);
+          return false;
+        }
+        std::filesystem::copy_file(
+            source, dest, std::filesystem::copy_options::overwrite_existing);
+      }
+      EncodableMap map;
+      map[EncodableValue("path")] = EncodableValue(WideToUtf8(dest_wide));
+      map[EncodableValue("name")] =
+          EncodableValue(WideToUtf8(dest.filename().wstring()));
+      result->Success(EncodableValue(map));
+      return true;
+    } catch (const std::exception &e) {
+      result->Error("io_error", e.what());
+      return false;
+    }
+  };
+
+  if (auto hook = ReadEnvW(kTestSaveFileEnv)) {
+    if (TestHookIsCancel(*hook)) {
+      result->Success(EncodableValue());
+      return;
+    }
+    write_dest(*hook);
+    return;
+  }
+
   IFileSaveDialog *dialog = nullptr;
   HRESULT hr =
       CoCreateInstance(CLSID_FileSaveDialog, nullptr, CLSCTX_INPROC_SERVER,
@@ -529,44 +677,9 @@ void SaveFile(flutter::PluginRegistrarWindows *registrar,
     result->Success(EncodableValue());
     return;
   }
-
-  try {
-    std::filesystem::path dest(path);
-    if (bytes) {
-      std::ofstream out(dest, std::ios::binary);
-      if (!out) {
-        CoTaskMemFree(path);
-        result->Error("io_error", "Unable to open destination file");
-        return;
-      }
-      out.write(reinterpret_cast<const char *>(bytes->data()),
-                static_cast<std::streamsize>(bytes->size()));
-      out.close();
-      if (out.fail()) {
-        CoTaskMemFree(path);
-        result->Error("io_error", "Failed to write destination file");
-        return;
-      }
-    } else {
-      std::filesystem::path source(Utf8ToWide(source_path));
-      if (!std::filesystem::exists(source)) {
-        CoTaskMemFree(path);
-        result->Error("not_found", "File not found: " + source_path);
-        return;
-      }
-      std::filesystem::copy_file(
-          source, dest, std::filesystem::copy_options::overwrite_existing);
-    }
-    EncodableMap map;
-    map[EncodableValue("path")] = EncodableValue(WideToUtf8(path));
-    map[EncodableValue("name")] =
-        EncodableValue(WideToUtf8(dest.filename().wstring()));
-    CoTaskMemFree(path);
-    result->Success(EncodableValue(map));
-  } catch (const std::exception &e) {
-    CoTaskMemFree(path);
-    result->Error("io_error", e.what());
-  }
+  std::wstring dest_wide(path);
+  CoTaskMemFree(path);
+  write_dest(dest_wide);
 }
 
 void OpenFile(const EncodableMap *args,
@@ -585,6 +698,18 @@ void OpenFile(const EncodableMap *args,
   if (path.empty()) {
     result->Error("invalid_args", "Either path or identifier must be provided");
     return;
+  }
+
+  if (auto open_hook = ReadEnvW(kTestOpenFileEnv)) {
+    if (*open_hook == L"skip") {
+      std::error_code ec;
+      if (!std::filesystem::exists(Utf8ToWide(path), ec)) {
+        result->Error("not_found", "File not found");
+        return;
+      }
+      result->Success(EncodableValue(true));
+      return;
+    }
   }
 
   std::wstring wide = Utf8ToWide(path);
