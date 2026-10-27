@@ -1,6 +1,10 @@
 ## Unreleased
 
+## 1.5.5
+
 * iOS: raise plugin minimum to **14.0** and drop deprecated `UIDocumentPicker` / MobileCoreServices iOS 13 fallbacks so Xcode builds with zero deprecation warnings.
+* iOS: `openFile` reports `not_found` for missing local files (aligned with Android/macOS).
+* Example: expand `integration_test` coverage and add `test_driver/integration_test.dart` for `flutter drive`.
 
 ## 1.5.4
 
