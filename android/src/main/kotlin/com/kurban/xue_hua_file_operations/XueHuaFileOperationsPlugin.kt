@@ -210,7 +210,13 @@ class XueHuaFileOperationsPlugin :
                 } else {
                     val source = File(sourcePath!!)
                     if (!source.exists()) throw FileNotFoundException("File not found: $sourcePath")
-                    source.copyTo(dest, overwrite = true)
+                    // Stream overwrite: File.copyTo(overwrite=true) deletes the
+                    // destination first, which fails under SELinux when the
+                    // hook target is a pre-created shell_data_file (e.g.
+                    // /data/local/tmp/...). Opening for write works.
+                    source.inputStream().use { input ->
+                        dest.outputStream().use { output -> input.copyTo(output) }
+                    }
                 }
                 mainHandler.post {
                     result.success(mapOf("path" to dest.absolutePath, "name" to fileName))

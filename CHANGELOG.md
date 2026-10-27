@@ -1,3 +1,8 @@
+## 1.5.4
+
+* Android: stream-overwrite in saveFile dialog hook so writing to a pre-created `/data/local/tmp/...` shell_data_file works under SELinux (File.copyTo(overwrite=true) deletes first and fails).
+* Example `android_camera_helper`: match review Done as 「完成」/Done; wait for enabled shutter; preview-center AF tap; one shutter retry for LIMITED/Converged path; also read `mFocusedApp` when API36 leaves `mCurrentFocus=null` so Camera2 UI is detected. Emulator Camera2 VirtualScene back-cam hang documented (use Emulated; issuetracker 209835361).
+
 ## 1.5.3
 
 * macOS: add the same automated dialog test hooks as Linux/Windows (`XUE_HUA_TEST_PICK_FILE` / `PICK_FILES` / `PICK_DIR` / `SAVE_FILE` / `OPEN_FILE=skip`, literal `CANCEL`) so `flutter_driver` can cover pick / save / open without native choosers. Multi-file paths are colon-separated (like Linux).

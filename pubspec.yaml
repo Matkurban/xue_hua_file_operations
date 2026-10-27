@@ -1,6 +1,6 @@
 name: xue_hua_file_operations
 description: "Cross-platform Flutter plugin for picking files/directories, capturing photos/videos with the camera, save-as, saving to the gallery, and opening files with the system default app."
-version: 1.5.3
+version: 1.5.4
 homepage: https://github.com/Matkurban/xue_hua_file_operations
 repository: https://github.com/Matkurban/xue_hua_file_operations
 topics:
