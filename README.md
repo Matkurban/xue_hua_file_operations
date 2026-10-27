@@ -64,7 +64,7 @@ See [Ship skills with packages](https://dart.dev/tools/pub/package-skills).
 | Platform | Supported   | Notes                                                                                                            |
 |----------|-------------|------------------------------------------------------------------------------------------------------------------|
 | Android  | Yes         | Storage Access Framework (SAF) / Activity Result APIs; `saveToGallery` uses MediaStore / public Pictures         |
-| iOS      | Yes (13.0+) | Media uses `PHPickerViewController` (iOS 14+), other types use `UIDocumentPicker`; `saveToGallery` uses PhotoKit |
+| iOS      | Yes (14.0+) | Media uses `PHPickerViewController` (iOS 14+), other types use `UIDocumentPicker`; `saveToGallery` uses PhotoKit |
 | macOS    | Yes         | Native `NSOpenPanel` / `NSSavePanel`; `saveToGallery` uses PhotoKit; camera capture via AVFoundation              |
 | Windows  | Yes         | Native file / folder dialogs; `saveToGallery` writes Pictures / Videos; camera capture via Media Foundation       |
 | Linux    | Yes         | Native file / folder dialogs; `saveToGallery` writes XDG Pictures / Videos; camera capture via GStreamer          |
@@ -114,7 +114,7 @@ class MainActivity : FlutterFragmentActivity()
 
 ### iOS
 
-Minimum version is **iOS 13.0** (same as Flutter’s default `IPHONEOS_DEPLOYMENT_TARGET`). Host apps do not need to raise it to 14.0 to use this plugin.
+Minimum version is **iOS 14.0** (required for `UTType` document pickers and `PHPickerViewController`).
 
 **Permissions for document pick / save / open:** No extra Info.plist privacy keys (such as photo library usage descriptions) are required for those document-picker APIs.
 
@@ -610,7 +610,7 @@ High-level filter for pick dialogs:
 | `FileType.audio`  | Audio                                                  |
 | `FileType.custom` | Rely on `allowedExtensions` / `allowedMimeTypes`       |
 
-On iOS / Android, `image` / `video` / `media` without `allowedExtensions` / `allowedMimeTypes` uses the system photo picker (no photo permission required); passing custom filters keeps the document picker. iOS 13 falls back to the document picker.
+On iOS / Android, `image` / `video` / `media` without `allowedExtensions` / `allowedMimeTypes` uses the system photo picker (no photo permission required); passing custom filters keeps the document picker. Requires iOS 14+.
 
 ### `CameraFacing`
 

@@ -100,10 +100,7 @@ enum GallerySaver {
     }
 
     private static func currentStatus(forAlbum: Bool) -> PHAuthorizationStatus {
-        if #available(iOS 14.0, *) {
-            return PHPhotoLibrary.authorizationStatus(for: forAlbum ? .readWrite : .addOnly)
-        }
-        return PHPhotoLibrary.authorizationStatus()
+        PHPhotoLibrary.authorizationStatus(for: forAlbum ? .readWrite : .addOnly)
     }
 
     private static func wireName(for status: PHAuthorizationStatus) -> String {
@@ -116,10 +113,9 @@ enum GallerySaver {
             return "permanentlyDenied"
         case .notDetermined:
             return "denied"
-        default:
-            if #available(iOS 14.0, *), status == .limited {
-                return "limited"
-            }
+        case .limited:
+            return "limited"
+        @unknown default:
             return "denied"
         }
     }
@@ -136,18 +132,10 @@ enum GallerySaver {
                 completion(existing)
                 return
             }
-            if #available(iOS 14.0, *) {
-                PHPhotoLibrary.requestAuthorization(for: forAlbum ? .readWrite : .addOnly) {
-                    newStatus in
-                    DispatchQueue.main.async {
-                        completion(newStatus)
-                    }
-                }
-            } else {
-                PHPhotoLibrary.requestAuthorization { newStatus in
-                    DispatchQueue.main.async {
-                        completion(newStatus)
-                    }
+            PHPhotoLibrary.requestAuthorization(for: forAlbum ? .readWrite : .addOnly) {
+                newStatus in
+                DispatchQueue.main.async {
+                    completion(newStatus)
                 }
             }
         }

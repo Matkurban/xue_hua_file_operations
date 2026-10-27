@@ -1,6 +1,6 @@
 import AVFoundation
 import Flutter
-import MobileCoreServices
+import UniformTypeIdentifiers
 import UIKit
 
 /// Presents the system camera (`UIImagePickerController`) to take a photo or
@@ -101,7 +101,9 @@ final class CameraCapture: NSObject, UIImagePickerControllerDelegate,
         guard let request = request else { return }
         let picker = UIImagePickerController()
         picker.sourceType = .camera
-        picker.mediaTypes = [request.isVideo ? kUTTypeMovie as String : kUTTypeImage as String]
+        picker.mediaTypes = [
+            request.isVideo ? UTType.movie.identifier : UTType.image.identifier,
+        ]
         if request.isVideo {
             picker.cameraCaptureMode = .video
             picker.videoQuality = .typeHigh
