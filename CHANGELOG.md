@@ -1,3 +1,7 @@
+## Unreleased
+
+* iOS: raise plugin minimum to **14.0** and drop deprecated `UIDocumentPicker` / MobileCoreServices iOS 13 fallbacks so Xcode builds with zero deprecation warnings.
+
 ## 1.5.4
 
 * Android: stream-overwrite in saveFile dialog hook so writing to a pre-created `/data/local/tmp/...` shell_data_file works under SELinux (File.copyTo(overwrite=true) deletes first and fails).

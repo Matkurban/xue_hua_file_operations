@@ -64,7 +64,7 @@ dart run skills@ get --all
 | 平台    | 是否支持    | 说明                                                                                                  |
 |---------|-------------|-------------------------------------------------------------------------------------------------------|
 | Android | 是          | Storage Access Framework (SAF) / Activity Result API；`saveToGallery` 使用 MediaStore / 公共 Pictures |
-| iOS     | 是（13.0+） | 媒体走 `PHPickerViewController`（iOS 14+），其余走 `UIDocumentPicker`；`saveToGallery` 使用 PhotoKit  |
+| iOS     | 是（14.0+） | 媒体走 `PHPickerViewController`（iOS 14+），其余走 `UIDocumentPicker`；`saveToGallery` 使用 PhotoKit  |
 | macOS   | 是          | 原生 `NSOpenPanel` / `NSSavePanel`；`saveToGallery` 使用 PhotoKit                                     |
 | Windows | 是          | 原生文件 / 文件夹对话框；`saveToGallery` 写入 Pictures / Videos                                       |
 | Linux   | 是          | 原生文件 / 文件夹对话框；`saveToGallery` 写入 XDG Pictures / Videos                                   |
@@ -114,7 +114,7 @@ class MainActivity : FlutterFragmentActivity()
 
 ### iOS
 
-最低版本为 **iOS 13.0**（与 Flutter 默认的 `IPHONEOS_DEPLOYMENT_TARGET` 一致）。宿主应用无需为了使用本插件而升到 14.0。
+最低版本为 **iOS 14.0**（`UTType` 文档选择器与 `PHPickerViewController` 所需）。
 
 **权限（文档选择 / 保存 / 打开）：** 使用本插件的文档选择 / 保存 / 打开 API 时，无需额外在 Info.plist 中配置相册等隐私用途说明键。
 
@@ -611,7 +611,7 @@ Future<void> openFile({String? path, String? identifier})
 | `FileType.audio`  | 音频                                            |
 | `FileType.custom` | 依赖 `allowedExtensions` / `allowedMimeTypes`   |
 
-在 iOS / Android 上，`image` / `video` / `media` 且未传 `allowedExtensions` / `allowedMimeTypes` 时使用系统照片选择器（无需相册权限）；传入自定义过滤时仍使用文档选择器。iOS 13 回退到文档选择器。
+在 iOS / Android 上，`image` / `video` / `media` 且未传 `allowedExtensions` / `allowedMimeTypes` 时使用系统照片选择器（无需相册权限）；传入自定义过滤时仍使用文档选择器。需要 iOS 14+。
 
 ### `CameraFacing`
 

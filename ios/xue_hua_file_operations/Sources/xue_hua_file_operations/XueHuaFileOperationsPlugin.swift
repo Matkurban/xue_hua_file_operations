@@ -1,5 +1,4 @@
 import Flutter
-import MobileCoreServices
 import PhotosUI
 import UIKit
 import UniformTypeIdentifiers
@@ -105,7 +104,6 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
         return root
     }
 
-    @available(iOS 14.0, *)
     private func contentTypes(from args: [String: Any]?) -> [UTType] {
         var types: [UTType] = []
         if let mimes = args?["allowedMimeTypes"] as? [String] {
@@ -136,81 +134,19 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
         }
     }
 
-    private func contentTypeIdentifiers(from args: [String: Any]?) -> [String] {
-        var types: [String] = []
-        if let mimes = args?["allowedMimeTypes"] as? [String] {
-            for mime in mimes {
-                if let identifier = utiIdentifier(mimeType: mime) {
-                    types.append(identifier)
-                }
-            }
-        }
-        if let exts = args?["allowedExtensions"] as? [String] {
-            for ext in exts {
-                let clean = ext.hasPrefix(".") ? String(ext.dropFirst()) : ext
-                if let identifier = utiIdentifier(filenameExtension: clean) {
-                    types.append(identifier)
-                }
-            }
-        }
-        if !types.isEmpty {
-            return types
-        }
-
-        switch args?["type"] as? String {
-        case "image": return ["public.image"]
-        case "video": return ["public.movie"]
-        case "media": return ["public.image", "public.movie"]
-        case "audio": return ["public.audio"]
-        default: return ["public.item"]
-        }
-    }
-
-    private func utiIdentifier(mimeType: String) -> String? {
-        if #available(iOS 14.0, *) {
-            return UTType(mimeType: mimeType)?.identifier
-        }
-        return UTTypeCreatePreferredIdentifierForTag(
-            kUTTagClassMIMEType,
-            mimeType as CFString,
-            nil
-        )?.takeRetainedValue() as String?
-    }
-
-    private func utiIdentifier(filenameExtension: String) -> String? {
-        if #available(iOS 14.0, *) {
-            return UTType(filenameExtension: filenameExtension)?.identifier
-        }
-        return UTTypeCreatePreferredIdentifierForTag(
-            kUTTagClassFilenameExtension,
-            filenameExtension as CFString,
-            nil
-        )?.takeRetainedValue() as String?
-    }
-
     private func makeOpenPicker(
         directory: Bool,
         args: [String: Any]?
     ) -> UIDocumentPickerViewController {
-        if #available(iOS 14.0, *) {
-            let types: [UTType] = directory ? [.folder] : contentTypes(from: args)
-            return UIDocumentPickerViewController(
-                forOpeningContentTypes: types,
-                asCopy: !directory
-            )
-        }
-        let identifiers = directory ? ["public.folder"] : contentTypeIdentifiers(from: args)
+        let types: [UTType] = directory ? [.folder] : contentTypes(from: args)
         return UIDocumentPickerViewController(
-            documentTypes: identifiers,
-            in: directory ? .open : .import
+            forOpeningContentTypes: types,
+            asCopy: !directory
         )
     }
 
     private func makeExportPicker(url: URL) -> UIDocumentPickerViewController {
-        if #available(iOS 14.0, *) {
-            return UIDocumentPickerViewController(forExporting: [url], asCopy: true)
-        }
-        return UIDocumentPickerViewController(url: url, in: .exportToService)
+        return UIDocumentPickerViewController(forExporting: [url], asCopy: true)
     }
 
     private func pick(
@@ -240,8 +176,7 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
 
         // Media types must go through the Photos picker: the document picker
         // browses the Files app, which cannot show the photo library.
-        if !directory, #available(iOS 14.0, *),
-           let mediaType = photoPickerType(from: args)
+        if !directory, let mediaType = photoPickerType(from: args)
         {
             presentPhotoPicker(
                 type: mediaType,
@@ -275,7 +210,6 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
         }
     }
 
-    @available(iOS 14.0, *)
     private func presentPhotoPicker(
         type: String,
         multiple: Bool,
@@ -295,7 +229,6 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
         presenter.present(picker, animated: true)
     }
 
-    @available(iOS 14.0, *)
     private func loadPhotoPickerResults(
         _ results: [PHPickerResult],
         withData: Bool,
@@ -441,6 +374,16 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
         // UIApplication.open always fails for file URLs; go straight to the
         // document interaction controller for local files.
         if resolved.url.isFileURL {
+            // Match Android/macOS: missing local files must report not_found
+            // instead of attempting preview/Open-In (which can still "succeed").
+            if !FileManager.default.fileExists(atPath: resolved.url.path) {
+                result(FlutterError(
+                    code: "not_found",
+                    message: "File not found",
+                    details: nil
+                ))
+                return
+            }
             presentDocumentInteraction(for: resolved.url, result: result)
             return
         }
@@ -741,7 +684,6 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
     }
 }
 
-@available(iOS 14.0, *)
 extension XueHuaFileOperationsPlugin: PHPickerViewControllerDelegate {
     public func picker(
         _ picker: PHPickerViewController,
