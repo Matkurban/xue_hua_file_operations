@@ -58,7 +58,6 @@ final class CustomMediaPickerViewController: UIViewController,
     private var dateBubbleHideWorkItem: DispatchWorkItem?
 
     private let bottomBar = UIView()
-    private let selectedCountLabel = UILabel()
     private let confirmButton = UIButton(type: .system)
 
     private let emptyStateStack = UIStackView()
@@ -476,6 +475,9 @@ final class CustomMediaPickerViewController: UIViewController,
     }
 
     private func setupBottomBar() {
+        // Mount on self.view (not sheetContainer) so the Done button stays visible
+        // in BOTH half-screen and full-screen modes, showing only the right-aligned button.
+        // 挂载在根视图 self.view 上，确保半屏与全屏模式下底部完成按钮均始终可见，且仅显示右侧完成按钮。
         bottomBar.backgroundColor = config.theme.surfaceColor
         bottomBar.layer.shadowColor = UIColor.black.cgColor
         bottomBar.layer.shadowOpacity = 0.1
@@ -483,33 +485,25 @@ final class CustomMediaPickerViewController: UIViewController,
         bottomBar.layer.shadowOffset = CGSize(width: 0, height: -2)
         bottomBar.isHidden = true
         bottomBar.translatesAutoresizingMaskIntoConstraints = false
-        sheetContainer.addSubview(bottomBar)
-
-        selectedCountLabel.font = .systemFont(ofSize: 14, weight: .medium)
-        selectedCountLabel.textColor = config.theme.textColor
-        selectedCountLabel.translatesAutoresizingMaskIntoConstraints = false
-        bottomBar.addSubview(selectedCountLabel)
+        view.addSubview(bottomBar)
 
         confirmButton.backgroundColor = config.theme.primaryColor
         confirmButton.setTitleColor(config.theme.onPrimaryColor, for: .normal)
         confirmButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
         confirmButton.layer.cornerRadius = 20
-        confirmButton.contentEdgeInsets = UIEdgeInsets(top: 10, left: 20, bottom: 10, right: 20)
+        confirmButton.contentEdgeInsets = UIEdgeInsets(top: 10, left: 22, bottom: 10, right: 22)
         confirmButton.translatesAutoresizingMaskIntoConstraints = false
         confirmButton.addTarget(self, action: #selector(handleConfirmSelection), for: .touchUpInside)
         bottomBar.addSubview(confirmButton)
 
         NSLayoutConstraint.activate([
-            bottomBar.leadingAnchor.constraint(equalTo: sheetContainer.leadingAnchor),
-            bottomBar.trailingAnchor.constraint(equalTo: sheetContainer.trailingAnchor),
-            bottomBar.bottomAnchor.constraint(equalTo: sheetContainer.bottomAnchor),
-
-            selectedCountLabel.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor, constant: 18),
-            selectedCountLabel.centerYAnchor.constraint(equalTo: confirmButton.centerYAnchor),
+            bottomBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            bottomBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            bottomBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
             confirmButton.topAnchor.constraint(equalTo: bottomBar.topAnchor, constant: 12),
             confirmButton.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor, constant: -16),
-            confirmButton.bottomAnchor.constraint(equalTo: sheetContainer.safeAreaLayoutGuide.bottomAnchor, constant: -12),
+            confirmButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
         ])
     }
 
@@ -558,11 +552,16 @@ final class CustomMediaPickerViewController: UIViewController,
         let half = max(collapsedTopOffset, 1)
         let expandProgress = min(max(1.0 - (clamped / half), 0), 1)
 
+        let scrimAlpha: CGFloat
         if clamped <= half {
-            scrimView.alpha = 1.0
+            scrimAlpha = 1.0
         } else {
             let dismissRange = max(screenHeight - half, 1)
-            scrimView.alpha = min(max(1.0 - ((clamped - half) / dismissRange), 0), 1)
+            scrimAlpha = min(max(1.0 - ((clamped - half) / dismissRange), 0), 1)
+        }
+        scrimView.alpha = scrimAlpha
+        if !bottomBar.isHidden && !selectedAssetIds.isEmpty {
+            bottomBar.alpha = scrimAlpha
         }
 
         sheetContainer.layer.cornerRadius = config.theme.sheetCornerRadius * (1.0 - expandProgress)
@@ -1052,12 +1051,31 @@ final class CustomMediaPickerViewController: UIViewController,
         return true
     }
 
+    /// Updates ONLY the selection badges of currently visible cells in place
+    /// without calling `reloadData()`, eliminating all thumbnail flicker.
+    /// 仅就地刷新当前可见单元格的选中角标，不调用 `reloadData()`，彻底杜绝缩略图闪烁。
+    private func updateVisibleSelectionBadges() {
+        guard let album = currentAlbum else { return }
+        for cell in collectionView.visibleCells {
+            guard let thumbCell = cell as? MediaThumbnailCell,
+                  let indexPath = collectionView.indexPath(for: thumbCell),
+                  let idx = assetIndex(for: indexPath) else {
+                continue
+            }
+            let asset = album.fetchResult.object(at: idx)
+            let selIdx = selectedAssetIds.firstIndex(of: asset.localIdentifier)
+            thumbCell.updateBadge(
+                theme: config.theme,
+                multiple: config.multiple,
+                selectionIndex: selIdx
+            )
+        }
+    }
+
     private func refreshSelectionUI() {
-        collectionView.reloadData()
+        updateVisibleSelectionBadges()
         let count = selectedAssetIds.count
         if count > 0 {
-            let suffix = config.maxFiles.map { " / \($0)" } ?? ""
-            selectedCountLabel.text = "\(count)\(suffix)"
             confirmButton.setTitle("\(config.strings.done) (\(count))", for: .normal)
             if bottomBar.isHidden {
                 bottomBar.isHidden = false
@@ -1380,6 +1398,12 @@ private final class MediaThumbnailCell: UICollectionViewCell {
             durationLabel.isHidden = true
         }
 
+        updateBadge(theme: theme, multiple: multiple, selectionIndex: selectionIndex)
+    }
+
+    /// Updates only the circular selection badge without touching the thumbnail image.
+    /// 仅更新右上角选择角标，不触碰已加载的缩略图，避免闪烁。
+    func updateBadge(theme: CustomMediaPickerTheme, multiple: Bool, selectionIndex: Int?) {
         if let selIdx = selectionIndex {
             badgeCircle.backgroundColor = theme.primaryColor
             badgeCircle.layer.borderWidth = 0

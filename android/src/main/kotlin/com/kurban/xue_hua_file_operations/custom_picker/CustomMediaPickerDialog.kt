@@ -104,7 +104,6 @@ class CustomMediaPickerDialog(
     private lateinit var emptyStateContainer: LinearLayout
     private lateinit var bottomConfirmBar: FrameLayout
     private lateinit var confirmButton: TextView
-    private lateinit var selectedHintView: TextView
     private lateinit var fastScrollThumb: FrameLayout
     private lateinit var dateBubbleView: TextView
     private var activeCameraTile: CameraPreviewTileView? = null
@@ -179,6 +178,7 @@ class CustomMediaPickerDialog(
         recyclerView = RecyclerView(hostActivity).apply {
             layoutManager = gridLayoutManager
             adapter = gridAdapter
+            itemAnimator = null
             clipToPadding = false
             overScrollMode = View.OVER_SCROLL_NEVER
             setPadding(0, dp(24), 0, dp(88))
@@ -226,9 +226,10 @@ class CustomMediaPickerDialog(
         // Fast-scroll thumb & floating date bubble / 右侧快滑手柄与日期浮窗
         buildFastScrollerOverlays(sheetContainer, density)
 
-        // Bottom confirmation bar / 底部选中确认栏
+        // Mount bottom confirmation bar on root so it stays visible in BOTH half-screen and full-screen.
+        // 将底部确认栏挂载在 root 上，保证半屏与全屏状态下多选确认按钮均始终可见。
         bottomConfirmBar = buildBottomConfirmBar(density)
-        sheetContainer.addView(bottomConfirmBar)
+        root.addView(bottomConfirmBar)
 
         // Apply real system status bar & navigation bar insets
         // 监听并适配系统状态栏与底部导航栏安全区
@@ -367,6 +368,9 @@ class CustomMediaPickerDialog(
             (1f - ((clamped - half) / dismissRange)).coerceIn(0f, 1f)
         }
         scrimView.alpha = scrimFraction
+        if (bottomConfirmBar.visibility == View.VISIBLE && selectedItems.isNotEmpty()) {
+            bottomConfirmBar.alpha = scrimFraction
+        }
 
         // Smooth top corner radius via GPU OutlineProvider
         // 通过 OutlineProvider 平滑插值顶部圆角（半屏圆角 -> 全屏直角）
@@ -1021,17 +1025,6 @@ class CustomMediaPickerDialog(
             )
         }
 
-        selectedHintView = TextView(hostActivity).apply {
-            textSize = 14f
-            setTextColor(config.theme.textColor)
-            layoutParams = FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.START or Gravity.CENTER_VERTICAL
-            )
-        }
-        bar.addView(selectedHintView)
-
         confirmButton = TextView(hostActivity).apply {
             textSize = 15f
             typeface = Typeface.DEFAULT_BOLD
@@ -1212,13 +1205,26 @@ class CustomMediaPickerDialog(
         toggleSelection(item)
     }
 
+    /**
+     * Updates ONLY the selection badges on currently visible grid tiles in place,
+     * without calling `notifyDataSetChanged()` or recreating ImageViews (zero flash).
+     * 仅就地刷新当前可见网格项的选中角标，不调用 `notifyDataSetChanged()` 也不重建图片视图，彻底杜绝闪烁。
+     */
+    private fun updateVisibleSelectionBadges() {
+        for (i in 0 until recyclerView.childCount) {
+            val child = recyclerView.getChildAt(i) ?: continue
+            when (val holder = recyclerView.getChildViewHolder(child)) {
+                is HeroViewHolder -> holder.refreshBadgesOnly()
+                is CellViewHolder -> holder.refreshBadgeOnly()
+            }
+        }
+    }
+
     private fun refreshSelectionUI() {
-        gridAdapter.notifyDataSetChanged()
+        updateVisibleSelectionBadges()
         val count = selectedItems.size
         val density = hostActivity.resources.displayMetrics.density
         if (count > 0) {
-            val limitSuffix = config.maxFiles?.let { " / $it" } ?: ""
-            selectedHintView.text = "$count$limitSuffix"
             confirmButton.text = "${config.strings.done} ($count)"
             if (bottomConfirmBar.visibility != View.VISIBLE) {
                 bottomConfirmBar.visibility = View.VISIBLE
@@ -1241,33 +1247,36 @@ class CustomMediaPickerDialog(
         dismissAnimated { onResult(uris) }
     }
 
-    private fun bindMediaTile(container: FrameLayout, item: MediaItem, itemIndex: Int) {
-        val density = hostActivity.resources.displayMetrics.density
-        container.removeAllViews()
-        container.setBackgroundColor(0x22888888)
-        container.tag = item.id
+    /**
+     * Reusable media thumbnail cell view that keeps its ImageView and badge
+     * views allocated across binds so toggling selection never flickers.
+     * 可复用媒体缩略图视图：跨绑定复用 ImageView 与角标控件，切换选中态时只更新角标，零闪烁。
+     */
+    private inner class MediaTileView(context: Context) : FrameLayout(context) {
+        private val density = context.resources.displayMetrics.density
+        private val imageView = ImageView(context)
+        private val durationView = TextView(context)
+        private val badgeHitArea = FrameLayout(context)
+        private val badgeCircle = FrameLayout(context)
+        private val badgeNumber = TextView(context)
+        private val badgeCheck = ImageView(context)
 
-        val imageView = ImageView(hostActivity).apply {
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            layoutParams = FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-            setOnClickListener { onThumbnailClicked(item, itemIndex) }
-        }
-        container.addView(imageView)
+        private var boundItem: MediaItem? = null
+        private var boundItemIndex: Int = -1
 
-        repository.loadThumbnail(item.uri, (cellSizePx * 1.5f).roundToInt(), item.isVideo) { bmp ->
-            mainHandler.post {
-                if (container.tag == item.id && bmp != null) {
-                    imageView.setImageBitmap(bmp)
+        init {
+            setBackgroundColor(0x22888888)
+            imageView.apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+                setOnClickListener {
+                    val item = boundItem ?: return@setOnClickListener
+                    onThumbnailClicked(item, boundItemIndex)
                 }
             }
-        }
+            addView(imageView)
 
-        if (item.isVideo) {
-            val durView = TextView(hostActivity).apply {
-                text = MediaStoreRepository.formatDuration(item.durationMs)
+            durationView.apply {
                 textSize = 11f
                 setTextColor(Color.WHITE)
                 setPadding((6 * density).roundToInt(), (2 * density).roundToInt(), (6 * density).roundToInt(), (2 * density).roundToInt())
@@ -1276,65 +1285,106 @@ class CustomMediaPickerDialog(
                     cornerRadius = 6 * density
                     setColor(0x88000000.toInt())
                 }
-                layoutParams = FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    Gravity.BOTTOM or Gravity.START
-                ).apply {
+                visibility = View.GONE
+                layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.START).apply {
                     marginStart = (5 * density).roundToInt()
                     bottomMargin = (5 * density).roundToInt()
                 }
             }
-            container.addView(durView)
-        }
+            addView(durationView)
 
-        val selIdx = selectedItems.indexOfFirst { it.id == item.id }
-        val hitSize = (38 * density).roundToInt()
-        val badgeSize = (24 * density).roundToInt()
-        val badgeHitArea = FrameLayout(hostActivity).apply {
-            layoutParams = FrameLayout.LayoutParams(hitSize, hitSize, Gravity.TOP or Gravity.END)
-            setOnClickListener { onBadgeClicked(item) }
-        }
-        val badgeCircle = FrameLayout(hostActivity).apply {
-            layoutParams = FrameLayout.LayoutParams(badgeSize, badgeSize, Gravity.TOP or Gravity.END).apply {
+            val hitSize = (38 * density).roundToInt()
+            val badgeSize = (24 * density).roundToInt()
+            badgeHitArea.apply {
+                layoutParams = LayoutParams(hitSize, hitSize, Gravity.TOP or Gravity.END)
+                setOnClickListener {
+                    val item = boundItem ?: return@setOnClickListener
+                    onBadgeClicked(item)
+                }
+            }
+            badgeCircle.layoutParams = LayoutParams(badgeSize, badgeSize, Gravity.TOP or Gravity.END).apply {
                 topMargin = (6 * density).roundToInt()
                 marginEnd = (6 * density).roundToInt()
             }
+            badgeNumber.apply {
+                textSize = 12f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(config.theme.onPrimaryColor)
+                gravity = Gravity.CENTER
+                visibility = View.GONE
+                layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+            }
+            badgeCheck.apply {
+                setImageResource(R.drawable.xh_ic_check)
+                setColorFilter(config.theme.onPrimaryColor, PorterDuff.Mode.SRC_IN)
+                val iconPx = (15 * density).roundToInt()
+                visibility = View.GONE
+                layoutParams = LayoutParams(iconPx, iconPx, Gravity.CENTER)
+            }
+            badgeCircle.addView(badgeNumber)
+            badgeCircle.addView(badgeCheck)
+            badgeHitArea.addView(badgeCircle)
+            addView(badgeHitArea)
+        }
+
+        fun bind(item: MediaItem?, itemIndex: Int) {
+            if (item == null) {
+                boundItem = null
+                boundItemIndex = -1
+                visibility = View.INVISIBLE
+                return
+            }
+            visibility = View.VISIBLE
+            val itemChanged = boundItem?.id != item.id
+            boundItem = item
+            boundItemIndex = itemIndex
+
+            if (itemChanged) {
+                imageView.setImageBitmap(null)
+                val targetId = item.id
+                repository.loadThumbnail(item.uri, (cellSizePx * 1.5f).roundToInt(), item.isVideo) { bmp ->
+                    mainHandler.post {
+                        if (boundItem?.id == targetId && bmp != null) {
+                            imageView.setImageBitmap(bmp)
+                        }
+                    }
+                }
+                if (item.isVideo) {
+                    durationView.text = MediaStoreRepository.formatDuration(item.durationMs)
+                    durationView.visibility = View.VISIBLE
+                } else {
+                    durationView.visibility = View.GONE
+                }
+            }
+            refreshBadgeOnly()
+        }
+
+        fun refreshBadgeOnly() {
+            val item = boundItem ?: return
+            val selIdx = selectedItems.indexOfFirst { it.id == item.id }
             if (selIdx >= 0) {
-                background = GradientDrawable().apply {
+                badgeCircle.background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
                     setColor(config.theme.primaryColor)
                 }
                 if (config.multiple) {
-                    addView(TextView(hostActivity).apply {
-                        text = "${selIdx + 1}"
-                        textSize = 12f
-                        typeface = Typeface.DEFAULT_BOLD
-                        setTextColor(config.theme.onPrimaryColor)
-                        gravity = Gravity.CENTER
-                        layoutParams = FrameLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT
-                        )
-                    })
+                    badgeCheck.visibility = View.GONE
+                    badgeNumber.visibility = View.VISIBLE
+                    badgeNumber.text = "${selIdx + 1}"
                 } else {
-                    addView(ImageView(hostActivity).apply {
-                        setImageResource(R.drawable.xh_ic_check)
-                        setColorFilter(config.theme.onPrimaryColor, PorterDuff.Mode.SRC_IN)
-                        val iconPx = (15 * density).roundToInt()
-                        layoutParams = FrameLayout.LayoutParams(iconPx, iconPx, Gravity.CENTER)
-                    })
+                    badgeNumber.visibility = View.GONE
+                    badgeCheck.visibility = View.VISIBLE
                 }
             } else {
-                background = GradientDrawable().apply {
+                badgeNumber.visibility = View.GONE
+                badgeCheck.visibility = View.GONE
+                badgeCircle.background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
                     setColor(config.theme.unselectedBadgeFillColor)
                     setStroke((1.8f * density).roundToInt(), config.theme.unselectedBadgeBorderColor)
                 }
             }
         }
-        badgeHitArea.addView(badgeCircle)
-        container.addView(badgeHitArea)
     }
 
     private inner class MediaGridAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
@@ -1367,12 +1417,12 @@ class CustomMediaPickerDialog(
                 }
                 HeroViewHolder(row)
             } else {
-                val cell = FrameLayout(hostActivity).apply {
+                val tile = MediaTileView(hostActivity).apply {
                     layoutParams = RecyclerView.LayoutParams(cellSizePx, cellSizePx).apply {
                         bottomMargin = spacingPx
                     }
                 }
-                CellViewHolder(cell)
+                CellViewHolder(tile)
             }
         }
 
@@ -1381,12 +1431,12 @@ class CustomMediaPickerDialog(
                 holder.bind()
             } else if (holder is CellViewHolder) {
                 val itemIdx = adapterPositionToItemIndex(position)
-                val item = currentItems.getOrNull(itemIdx) ?: return
+                val item = currentItems.getOrNull(itemIdx)
                 val col = (if (hasHeroCameraHeader()) position - 1 else position) % config.crossAxisCount
-                val lp = holder.container.layoutParams as RecyclerView.LayoutParams
+                val lp = holder.tileView.layoutParams as RecyclerView.LayoutParams
                 lp.marginEnd = if (col < config.crossAxisCount - 1) spacingPx else 0
-                holder.container.layoutParams = lp
-                bindMediaTile(holder.container, item, itemIdx)
+                holder.tileView.layoutParams = lp
+                holder.tileView.bind(item, itemIdx)
             }
         }
     }
@@ -1400,6 +1450,7 @@ class CustomMediaPickerDialog(
         private val rightColumn = LinearLayout(hostActivity).apply {
             orientation = LinearLayout.VERTICAL
         }
+        private val rightTiles = ArrayList<MediaTileView>()
 
         init {
             val heroHeight = cellSizePx * 2 + spacingPx
@@ -1413,13 +1464,6 @@ class CustomMediaPickerDialog(
             root.addView(cameraTile)
 
             rightColumn.layoutParams = LinearLayout.LayoutParams(0, heroHeight, 1f)
-            root.addView(rightColumn)
-            activeCameraTile = cameraTile
-            cameraTile.startPreview()
-        }
-
-        fun bind() {
-            rightColumn.removeAllViews()
             val rightCols = config.crossAxisCount - 1
             for (r in 0 until 2) {
                 val rowLayout = LinearLayout(hostActivity).apply {
@@ -1432,23 +1476,36 @@ class CustomMediaPickerDialog(
                     }
                 }
                 for (c in 0 until rightCols) {
-                    val idx = r * rightCols + c
-                    val slot = FrameLayout(hostActivity).apply {
+                    val tile = MediaTileView(hostActivity).apply {
                         layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
                             if (c < rightCols - 1) marginEnd = spacingPx
                         }
                     }
-                    val item = currentItems.getOrNull(idx)
-                    if (item != null) {
-                        bindMediaTile(slot, item, idx)
-                    }
-                    rowLayout.addView(slot)
+                    rightTiles.add(tile)
+                    rowLayout.addView(tile)
                 }
                 rightColumn.addView(rowLayout)
+            }
+            root.addView(rightColumn)
+            activeCameraTile = cameraTile
+            cameraTile.startPreview()
+        }
+
+        fun bind() {
+            for (idx in rightTiles.indices) {
+                rightTiles[idx].bind(currentItems.getOrNull(idx), idx)
+            }
+        }
+
+        fun refreshBadgesOnly() {
+            for (tile in rightTiles) {
+                tile.refreshBadgeOnly()
             }
         }
     }
 
-    private inner class CellViewHolder(val container: FrameLayout) :
-        RecyclerView.ViewHolder(container)
+    private inner class CellViewHolder(val tileView: MediaTileView) :
+        RecyclerView.ViewHolder(tileView) {
+        fun refreshBadgeOnly() = tileView.refreshBadgeOnly()
+    }
 }

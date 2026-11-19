@@ -372,62 +372,66 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
         withData: Bool,
         completion: @escaping ([[String: Any?]], Error?) -> Void
     ) {
-        let group = DispatchGroup()
-        var maps = [[String: Any?]?](repeating: nil, count: results.count)
-        var firstError: Error?
-        let lock = NSLock()
+        // Dispatch off main thread so PHPicker dismissal and itemProvider checks
+        // never stall the UI thread.
+        // 将 PHPicker 结果解析与拷贝整体放入后台队列，避免系统选择器关闭时短暂卡顿主线程。
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            let group = DispatchGroup()
+            var maps = [[String: Any?]?](repeating: nil, count: results.count)
+            var firstError: Error?
+            let lock = NSLock()
 
-        for (index, item) in results.enumerated() {
-            group.enter()
-            let provider = item.itemProvider
-            let assetIdentifier = item.assetIdentifier
-            let typeIdentifier = provider.hasItemConformingToTypeIdentifier(
-                UTType.movie.identifier
-            ) ? UTType.movie.identifier : UTType.image.identifier
-            provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) {
-                [weak self] url, error in
-                defer { group.leave() }
-                guard let self = self else { return }
-                if let url = url {
-                    do {
-                        // The provider URL is only valid inside this callback;
-                        // copy into the plugin cache before returning.
-                        let map = try self.copiedFileMap(
-                            from: url,
-                            name: url.lastPathComponent,
-                            withData: withData,
-                            identifier: assetIdentifier
-                        )
-                        lock.lock()
-                        maps[index] = map
-                        lock.unlock()
-                        return
-                    } catch {
-                        lock.lock()
-                        if firstError == nil { firstError = error }
-                        lock.unlock()
-                        return
+            for (index, item) in results.enumerated() {
+                group.enter()
+                let provider = item.itemProvider
+                let assetIdentifier = item.assetIdentifier
+                let typeIdentifier = provider.hasItemConformingToTypeIdentifier(
+                    UTType.movie.identifier
+                ) ? UTType.movie.identifier : UTType.image.identifier
+                provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) {
+                    [weak self] url, error in
+                    defer { group.leave() }
+                    guard let self = self else { return }
+                    if let url = url {
+                        do {
+                            let map = try self.copiedFileMap(
+                                from: url,
+                                name: url.lastPathComponent,
+                                withData: withData,
+                                identifier: assetIdentifier
+                            )
+                            lock.lock()
+                            maps[index] = map
+                            lock.unlock()
+                            return
+                        } catch {
+                            lock.lock()
+                            if firstError == nil { firstError = error }
+                            lock.unlock()
+                            return
+                        }
                     }
+                    lock.lock()
+                    if firstError == nil {
+                        firstError = error ?? NSError(
+                            domain: "xue_hua_file_operations",
+                            code: -1,
+                            userInfo: [
+                                NSLocalizedDescriptionKey: "Unable to load picked media",
+                            ]
+                        )
+                    }
+                    lock.unlock()
                 }
-                lock.lock()
-                if firstError == nil {
-                    firstError = error ?? NSError(
-                        domain: "xue_hua_file_operations",
-                        code: -1,
-                        userInfo: [
-                            NSLocalizedDescriptionKey: "Unable to load picked media",
-                        ]
-                    )
-                }
-                lock.unlock()
             }
-        }
 
-        group.notify(queue: .main) {
-            if let error = firstError {
-                completion([], error)
-            } else {
-                completion(maps.compactMap { $0 }, nil)
+            group.notify(queue: .main) {
+                if let error = firstError {
+                    completion([], error)
+                } else {
+                    completion(maps.compactMap { $0 }, nil)
+                }
             }
         }
     }

@@ -2,16 +2,17 @@ import AVFoundation
 import UIKit
 
 /// Collection view cell rendering a live rear-camera preview in the top-left
-/// 1x2 grid slot. Gracefully degrades to a static dark camera button when
-/// camera authorization has not been granted or on simulators without a camera.
+/// 1x2 grid slot. All AVCaptureSession lifecycle calls run strictly on a
+/// dedicated background serial queue so the main thread is never blocked.
 /// 渲染在媒体网格左上角 1×2 位置的实时后置相机预览单元格。
-/// 未获得相机权限或无摄像头硬件（如模拟器）时自动降级为静态拍照入口。
+/// 所有 AVCaptureSession 启停操作均严格在后台串行队列执行，绝不阻塞主线程。
 final class CameraPreviewCell: UICollectionViewCell {
     static let reuseId = "XueHuaCameraPreviewCell"
 
     private let sessionQueue = DispatchQueue(label: "com.kurban.xue_hua_file_operations.camera_tile")
     private var captureSession: AVCaptureSession?
     private var previewLayer: AVCaptureVideoPreviewLayer?
+    private var isStopped = false
 
     private let fallbackStack = UIStackView()
     private let fallbackIcon = UIImageView()
@@ -82,6 +83,7 @@ final class CameraPreviewCell: UICollectionViewCell {
     /// already granted and a physical camera device exists.
     /// 配置文案并在已获得相机权限且存在摄像头设备时启动实时预览。
     func configure(cameraLabel: String) {
+        isStopped = false
         fallbackLabel.text = cameraLabel
         guard AVCaptureDevice.authorizationStatus(for: .video) == .authorized else {
             showFallback()
@@ -96,15 +98,15 @@ final class CameraPreviewCell: UICollectionViewCell {
     }
 
     private func startLiveSessionIfNeeded() {
-        if let session = captureSession {
-            sessionQueue.async {
-                if !session.isRunning { session.startRunning() }
-            }
-            return
-        }
-
         sessionQueue.async { [weak self] in
-            guard let self = self else { return }
+            guard let self = self, !self.isStopped else { return }
+            if let session = self.captureSession {
+                if !session.isRunning {
+                    session.startRunning()
+                }
+                return
+            }
+
             guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
                     ?? AVCaptureDevice.default(for: .video),
                   let input = try? AVCaptureDeviceInput(device: device) else {
@@ -121,7 +123,8 @@ final class CameraPreviewCell: UICollectionViewCell {
             session.addInput(input)
             self.captureSession = session
 
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, !self.isStopped else { return }
                 let layer = AVCaptureVideoPreviewLayer(session: session)
                 layer.videoGravity = .resizeAspectFill
                 layer.frame = self.contentView.bounds
@@ -130,22 +133,34 @@ final class CameraPreviewCell: UICollectionViewCell {
                 self.fallbackStack.isHidden = true
                 self.cornerBadge.isHidden = false
             }
-            session.startRunning()
+
+            if !self.isStopped {
+                session.startRunning()
+            }
         }
     }
 
-    /// Stops the live capture session when the picker closes or scrolls away.
-    /// 停止实时预览会话以释放相机资源。
+    /// Stops the live capture session asynchronously without blocking the main thread.
+    /// 在后台串行队列异步停止相机预览会话，绝不阻塞主线程。
     func stopSession() {
-        guard let session = captureSession else { return }
+        isStopped = true
+        let session = captureSession
         sessionQueue.async {
-            if session.isRunning {
+            if let session = session, session.isRunning {
                 session.stopRunning()
             }
         }
     }
 
     deinit {
-        captureSession?.stopRunning()
+        // Capture session by value and stop on background queue to prevent main-thread deadlock.
+        // 按值捕获 session 并在后台队列停止，避免 deinit 在主线程同步 stopRunning 引发卡死。
+        let session = captureSession
+        let queue = sessionQueue
+        queue.async {
+            if let session = session, session.isRunning {
+                session.stopRunning()
+            }
+        }
     }
 }

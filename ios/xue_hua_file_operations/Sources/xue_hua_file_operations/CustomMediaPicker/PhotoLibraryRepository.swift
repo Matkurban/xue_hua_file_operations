@@ -1,3 +1,4 @@
+import AVFoundation
 import Flutter
 import Photos
 import UIKit
@@ -19,9 +20,9 @@ struct MediaAlbumItem {
     static let allVideosId = "__all_videos__"
 }
 
-/// Manages PhotoKit album queries, thumbnail caching, and asset-to-file export
-/// (including iCloud network download support).
-/// 负责 PhotoKit 相册与资源查询、缩略图缓存及所选资源导出（支持 iCloud 按需下载）。
+/// Manages PhotoKit album queries, thumbnail caching, and fully off-main-thread
+/// asset export (including iCloud downloads and edited media support).
+/// 负责 PhotoKit 相册查询、缩略图缓存及全异步后台导出（支持 iCloud 与已编辑媒体，绝不阻塞主线程）。
 final class PhotoLibraryRepository {
 
     let imageManager = PHCachingImageManager()
@@ -31,7 +32,6 @@ final class PhotoLibraryRepository {
     func loadAlbums(mediaType: String, strings: CustomMediaPickerStrings) -> [MediaAlbumItem] {
         var albums: [MediaAlbumItem] = []
 
-        // 1. All matching media / 全部符合类型条件的媒体
         let allOptions = makeFetchOptions(mediaType: mediaType)
         let allAssets = PHAsset.fetchAssets(with: allOptions)
         albums.append(
@@ -44,8 +44,6 @@ final class PhotoLibraryRepository {
             )
         )
 
-        // 2. All videos virtual album (only when picking mixed media)
-        // “所有视频”虚拟相册（仅在混合选择图片与视频时显示）
         if mediaType == "media" {
             let videoAssets = PHAsset.fetchAssets(with: makeFetchOptions(mediaType: "video"))
             if videoAssets.count > 0 {
@@ -61,7 +59,6 @@ final class PhotoLibraryRepository {
             }
         }
 
-        // 3. Smart albums & user albums / 智能相册与用户自建相册
         var seenIds = Set<String>()
         let smartSubtypes: [PHAssetCollectionSubtype] = [
             .smartAlbumFavorites,
@@ -157,42 +154,44 @@ final class PhotoLibraryRepository {
         }
     }
 
-    /// Exports selected [PHAsset] items to the plugin temporary cache directory
-    /// and returns Flutter wire maps.
-    /// 将选中的 [PHAsset] 导出到插件临时缓存目录并组装为 Flutter 通道 Map 列表。
+    /// Exports selected [PHAsset] items completely off the main thread into the
+    /// plugin temporary cache directory and invokes [completion] on the main queue.
+    /// 在后台队列异步导出所选 [PHAsset] 到插件临时缓存目录，完成后回到主线程回调。
     func exportAssets(
         _ assets: [PHAsset],
         withData: Bool,
         completion: @escaping ([[String: Any?]], Error?) -> Void
     ) {
-        let group = DispatchGroup()
-        var maps = [[String: Any?]?](repeating: nil, count: assets.count)
-        var firstError: Error?
-        let lock = NSLock()
+        DispatchQueue.global(qos: .userInitiated).async {
+            let group = DispatchGroup()
+            var maps = [[String: Any?]?](repeating: nil, count: assets.count)
+            var firstError: Error?
+            let lock = NSLock()
 
-        for (index, asset) in assets.enumerated() {
-            group.enter()
-            exportSingleAsset(asset, withData: withData) { map, error in
-                lock.lock()
-                if let map = map {
-                    maps[index] = map
-                } else if firstError == nil {
-                    firstError = error ?? NSError(
-                        domain: "xue_hua_file_operations",
-                        code: -1,
-                        userInfo: [NSLocalizedDescriptionKey: "Unable to export selected media"]
-                    )
+            for (index, asset) in assets.enumerated() {
+                group.enter()
+                self.exportSingleAsset(asset, withData: withData) { map, error in
+                    lock.lock()
+                    if let map = map {
+                        maps[index] = map
+                    } else if firstError == nil {
+                        firstError = error ?? NSError(
+                            domain: "xue_hua_file_operations",
+                            code: -1,
+                            userInfo: [NSLocalizedDescriptionKey: "Unable to export selected media"]
+                        )
+                    }
+                    lock.unlock()
+                    group.leave()
                 }
-                lock.unlock()
-                group.leave()
             }
-        }
 
-        group.notify(queue: .main) {
-            if let error = firstError {
-                completion([], error)
-            } else {
-                completion(maps.compactMap { $0 }, nil)
+            group.notify(queue: .main) {
+                if let error = firstError {
+                    completion([], error)
+                } else {
+                    completion(maps.compactMap { $0 }, nil)
+                }
             }
         }
     }
@@ -202,25 +201,6 @@ final class PhotoLibraryRepository {
         withData: Bool,
         completion: @escaping ([String: Any?]?, Error?) -> Void
     ) {
-        let resources = PHAssetResource.assetResources(for: asset)
-        let preferredResource: PHAssetResource?
-        if asset.mediaType == .video {
-            preferredResource = resources.first(where: { $0.type == .video || $0.type == .fullSizeVideo })
-                ?? resources.first
-        } else {
-            preferredResource = resources.first(where: { $0.type == .photo || $0.type == .fullSizePhoto })
-                ?? resources.first
-        }
-
-        guard let resource = preferredResource else {
-            completion(nil, NSError(
-                domain: "xue_hua_file_operations",
-                code: -2,
-                userInfo: [NSLocalizedDescriptionKey: "No asset resource available"]
-            ))
-            return
-        }
-
         let cacheDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("xue_hua_file_operations", isDirectory: true)
         do {
@@ -230,41 +210,155 @@ final class PhotoLibraryRepository {
             return
         }
 
-        let fileName = resource.originalFilename.isEmpty
-            ? (asset.mediaType == .video ? "video.mov" : "image.jpg")
-            : resource.originalFilename
-        let destURL = cacheDir.appendingPathComponent("\(UUID().uuidString)_\(fileName)")
+        if asset.mediaType == .image {
+            exportImageAsset(asset, cacheDir: cacheDir, withData: withData, completion: completion)
+        } else {
+            exportVideoAsset(asset, cacheDir: cacheDir, withData: withData, completion: completion)
+        }
+    }
 
-        let writeOptions = PHAssetResourceRequestOptions()
-        writeOptions.isNetworkAccessAllowed = true
-        PHAssetResourceManager.default().writeData(for: resource, toFile: destURL, options: writeOptions) { error in
-            if let error = error {
-                completion(nil, error)
-                return
-            }
-            do {
-                var size = (try? destURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
-                var bytes: FlutterStandardTypedData?
-                if withData {
-                    let data = try Data(contentsOf: destURL)
-                    bytes = FlutterStandardTypedData(bytes: data)
-                    size = data.count
+    /// Uses [PHImageManager.requestImageDataAndOrientation] for fast, reliable
+    /// image export without main-thread stalls or PHAssetResource hangs.
+    /// 使用 [PHImageManager.requestImageDataAndOrientation] 高效导出图片，避免资源流挂起。
+    private func exportImageAsset(
+        _ asset: PHAsset,
+        cacheDir: URL,
+        withData: Bool,
+        completion: @escaping ([String: Any?]?, Error?) -> Void
+    ) {
+        let options = PHImageRequestOptions()
+        options.version = .current
+        options.deliveryMode = .highQualityFormat
+        options.isNetworkAccessAllowed = true
+        options.isSynchronous = false
+
+        PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) { data, dataUTI, _, info in
+            DispatchQueue.global(qos: .userInitiated).async {
+                if let data = data {
+                    let ext: String
+                    if let uti = dataUTI, let type = UTType(uti), let preferred = type.preferredFilenameExtension {
+                        ext = preferred
+                    } else {
+                        ext = "jpg"
+                    }
+                    let fileName = "IMG_\(UUID().uuidString.prefix(8)).\(ext)"
+                    let destURL = cacheDir.appendingPathComponent("\(UUID().uuidString)_\(fileName)")
+                    do {
+                        try data.write(to: destURL, options: .atomic)
+                        let bytes = withData ? FlutterStandardTypedData(bytes: data) : nil
+                        completion([
+                            "name": fileName,
+                            "size": data.count,
+                            "path": destURL.path,
+                            "bytes": bytes,
+                            "identifier": asset.localIdentifier,
+                        ], nil)
+                    } catch {
+                        completion(nil, error)
+                    }
+                    return
                 }
-                completion([
-                    "name": fileName,
-                    "size": size,
-                    "path": destURL.path,
-                    "bytes": bytes,
-                    "identifier": asset.localIdentifier,
-                ], nil)
-            } catch {
-                completion(nil, error)
+                let err = (info?[PHImageErrorKey] as? Error) ?? NSError(
+                    domain: "xue_hua_file_operations",
+                    code: -2,
+                    userInfo: [NSLocalizedDescriptionKey: "Unable to read image data"]
+                )
+                completion(nil, err)
             }
         }
     }
 
-    /// Formats video duration in seconds as `m:ss` or `h:mm:ss`.
-    /// 将视频秒级时长格式化为 `m:ss` 或 `h:mm:ss`。
+    /// Exports video assets off-main-thread via [PHImageManager.requestAVAsset]
+    /// (fast file copy for [AVURLAsset]), falling back to [PHAssetResourceManager].
+    /// 在后台线程优先通过 [AVURLAsset] 快速拷贝视频文件，异常时回退至 [PHAssetResourceManager]。
+    private func exportVideoAsset(
+        _ asset: PHAsset,
+        cacheDir: URL,
+        withData: Bool,
+        completion: @escaping ([String: Any?]?, Error?) -> Void
+    ) {
+        let options = PHVideoRequestOptions()
+        options.version = .current
+        options.deliveryMode = .highQualityFormat
+        options.isNetworkAccessAllowed = true
+
+        PHImageManager.default().requestAVAsset(forVideo: asset, options: options) { avAsset, _, info in
+            DispatchQueue.global(qos: .userInitiated).async {
+                if let urlAsset = avAsset as? AVURLAsset {
+                    let fileName = urlAsset.url.lastPathComponent.isEmpty
+                        ? "VID_\(UUID().uuidString.prefix(8)).mov"
+                        : urlAsset.url.lastPathComponent
+                    let destURL = cacheDir.appendingPathComponent("\(UUID().uuidString)_\(fileName)")
+                    do {
+                        if FileManager.default.fileExists(atPath: destURL.path) {
+                            try FileManager.default.removeItem(at: destURL)
+                        }
+                        try FileManager.default.copyItem(at: urlAsset.url, to: destURL)
+                        var size = (try? destURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+                        var bytes: FlutterStandardTypedData?
+                        if withData {
+                            let data = try Data(contentsOf: destURL)
+                            bytes = FlutterStandardTypedData(bytes: data)
+                            size = data.count
+                        }
+                        completion([
+                            "name": fileName,
+                            "size": size,
+                            "path": destURL.path,
+                            "bytes": bytes,
+                            "identifier": asset.localIdentifier,
+                        ], nil)
+                        return
+                    } catch {
+                        // Fall through to resource manager fallback / 回退到资源流导出
+                    }
+                }
+
+                let resources = PHAssetResource.assetResources(for: asset)
+                guard let resource = resources.first(where: { $0.type == .video || $0.type == .fullSizeVideo })
+                        ?? resources.first else {
+                    let err = (info?[PHImageErrorKey] as? Error) ?? NSError(
+                        domain: "xue_hua_file_operations",
+                        code: -3,
+                        userInfo: [NSLocalizedDescriptionKey: "No video resource available"]
+                    )
+                    completion(nil, err)
+                    return
+                }
+                let fileName = resource.originalFilename.isEmpty ? "video.mov" : resource.originalFilename
+                let destURL = cacheDir.appendingPathComponent("\(UUID().uuidString)_\(fileName)")
+                let writeOptions = PHAssetResourceRequestOptions()
+                writeOptions.isNetworkAccessAllowed = true
+                PHAssetResourceManager.default().writeData(for: resource, toFile: destURL, options: writeOptions) { error in
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        if let error = error {
+                            completion(nil, error)
+                            return
+                        }
+                        do {
+                            var size = (try? destURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+                            var bytes: FlutterStandardTypedData?
+                            if withData {
+                                let data = try Data(contentsOf: destURL)
+                                bytes = FlutterStandardTypedData(bytes: data)
+                                size = data.count
+                            }
+                            completion([
+                                "name": fileName,
+                                "size": size,
+                                "path": destURL.path,
+                                "bytes": bytes,
+                                "identifier": asset.localIdentifier,
+                            ], nil)
+                        } catch {
+                            completion(nil, error)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     static func formatDuration(_ duration: TimeInterval) -> String {
         let total = max(0, Int(duration.rounded()))
         let hours = total / 3600
@@ -276,9 +370,6 @@ final class PhotoLibraryRepository {
         return String(format: "%d:%02d", minutes, seconds)
     }
 
-    /// Formats a creation [Date] into a localized Month + Year label for the
-    /// fast-scroll date bubble (e.g. "十一月 2026" / "November 2026").
-    /// 将创建时间格式化为本地化“月份 + 年份”字符串，用于右侧快滑日期浮窗。
     static func formatMonthYear(_ date: Date?) -> String {
         guard let date = date else { return "" }
         let formatter = DateFormatter()
