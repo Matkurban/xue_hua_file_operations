@@ -3,18 +3,17 @@ import PhotosUI
 import UIKit
 
 /// Customizable native sheet-style media picker for iOS (iOS 14.0+).
-/// Supports an expandable half-to-fullscreen sheet container, floating pill top bar,
-/// album dropdown popover, overflow menu ("Open in other app..."), optional 1x2 live
-/// camera preview tile, right-edge fast scroller with floating month-year bubble,
-/// iOS 14+ limited photo access banner, full-screen preview, and bottom confirmation bar.
+/// Uses a unified simultaneous nested-scroll pan gesture so dragging anywhere
+/// on the sheet or grid tracks the finger 1:1 between half-screen, full-screen,
+/// and dismiss states with spring physics and zero layout jumps.
 ///
 /// iOS 端可自定义样式的原生抽屉式媒体选择器（兼容 iOS 14.0+）。
-/// 支持半屏上拉展开至全屏、顶部悬浮胶囊栏、相册下拉浮窗、更多菜单（使用其它应用打开…）、
-/// 可配置的左上角 1×2 实时相机预览格、右侧快滑与日期浮窗、iOS 14+ 有限授权提示条、
-/// 全屏预览页及底部确认栏。
+/// 采用统一的嵌套手势协同机制：支持在面板或网格任意位置跟手 1:1 上拉展开至全屏、
+/// 全屏滑到顶部后无缝下拉回半屏或继续下拉关闭，结合弹簧阻尼物理吸附且全程零跳变。
 final class CustomMediaPickerViewController: UIViewController,
     UICollectionViewDataSource,
     UICollectionViewDelegate,
+    UIGestureRecognizerDelegate,
     PHPhotoLibraryChangeObserver
 {
     private let config: CustomMediaPickerConfig
@@ -29,18 +28,23 @@ final class CustomMediaPickerViewController: UIViewController,
     private var selectedAssetIds: [String] = []
     private var selectedAssetsById: [String: PHAsset] = [:]
 
-    private var isExpanded: Bool
     private var hasAnimatedEntrance = false
-    private var collapsedTopOffset: CGFloat = 0
-    private var sheetTopConstraint: NSLayoutConstraint!
+    private var isDismissing = false
     private var deliveredResult = false
+    private var screenHeight: CGFloat = 0
+    private var collapsedTopOffset: CGFloat = 0
+    private var currentSheetOffsetY: CGFloat = 0
+
+    // Nested-scroll pan state / 嵌套手势拖拽状态
+    private var panStartOffsetY: CGFloat = 0
+    private var panStartedInFullscreen = false
+    private var isDraggingSheet = false
+    private var sheetPanGesture: UIPanGestureRecognizer!
 
     private let scrimView = UIView()
     private let sheetContainer = UIView()
-    private let dragHandleArea = UIView()
     private let dragHandlePill = UIView()
     private let limitedBanner = UIView()
-    private let gridContainer = UIView()
     private var collectionView: UICollectionView!
 
     private let topBar = UIView()
@@ -72,7 +76,6 @@ final class CustomMediaPickerViewController: UIViewController,
     ) {
         self.config = config
         self.authStatus = authStatus
-        self.isExpanded = config.initialExpanded
         self.onComplete = onComplete
         self.onOpenInOtherApp = onOpenInOtherApp
         self.onLaunchCamera = onLaunchCamera
@@ -93,17 +96,21 @@ final class CustomMediaPickerViewController: UIViewController,
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .clear
-        collapsedTopOffset = UIScreen.main.bounds.height * 0.40
+        screenHeight = UIScreen.main.bounds.height
+        collapsedTopOffset = screenHeight * 0.42
 
         setupScrimAndSheet()
+        setupCollectionView()
         setupDragHandle()
         setupLimitedBannerIfNeeded()
-        setupGridAndCollectionView()
         setupFloatingTopBar()
         setupFastScroller()
         setupBottomBar()
         setupEmptyOrDeniedState()
-        applyExpansionVisuals(progress: isExpanded ? 1.0 : 0.0)
+        setupUnifiedSheetPanGesture()
+
+        // Start off-screen for smooth spring entrance / 初始置于屏幕底部以便弹簧滑入
+        applySheetOffset(screenHeight)
 
         NotificationCenter.default.addObserver(
             self,
@@ -124,16 +131,8 @@ final class CustomMediaPickerViewController: UIViewController,
         super.viewDidAppear(animated)
         guard !hasAnimatedEntrance else { return }
         hasAnimatedEntrance = true
-        UIView.animate(
-            withDuration: 0.32,
-            delay: 0,
-            usingSpringWithDamping: 0.88,
-            initialSpringVelocity: 0.4,
-            options: [.curveEaseOut]
-        ) {
-            self.scrimView.alpha = 1.0
-            self.sheetContainer.transform = .identity
-        }
+        let targetOffset: CGFloat = config.initialExpanded ? 0 : collapsedTopOffset
+        animateSheet(toOffset: targetOffset, duration: 0.34, damping: 0.88)
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -148,7 +147,7 @@ final class CustomMediaPickerViewController: UIViewController,
             PHPhotoLibrary.shared().register(self)
             emptyStateStack.isHidden = true
             collectionView.isHidden = false
-            applyExpansionVisuals(progress: isExpanded ? 1.0 : 0.0)
+            applySheetOffset(currentSheetOffsetY)
             loadAlbumsAsync()
         }
     }
@@ -163,20 +162,14 @@ final class CustomMediaPickerViewController: UIViewController,
         scrimView.addGestureRecognizer(tap)
         view.addSubview(scrimView)
 
+        // Sheet always spans full viewport height; position is driven purely by transform.
+        // 抽屉始终保持全屏高度，通过 GPU transform 驱动垂直位置，彻底消除 Auto Layout 冲突与抖动。
         sheetContainer.backgroundColor = config.theme.backgroundColor
         sheetContainer.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
-        sheetContainer.layer.cornerRadius = isExpanded ? 0 : config.theme.sheetCornerRadius
+        sheetContainer.layer.cornerRadius = config.theme.sheetCornerRadius
         sheetContainer.clipsToBounds = true
         sheetContainer.translatesAutoresizingMaskIntoConstraints = false
-        // Use transform for entrance/exit slide so Auto Layout keeps a valid non-zero height.
-        // 使用 transform 执行进出场滑动动画，避免压扁约束高度导致 Auto Layout 冲突。
-        sheetContainer.transform = CGAffineTransform(translationX: 0, y: UIScreen.main.bounds.height)
         view.addSubview(sheetContainer)
-
-        sheetTopConstraint = sheetContainer.topAnchor.constraint(
-            equalTo: view.topAnchor,
-            constant: isExpanded ? 0 : collapsedTopOffset
-        )
 
         NSLayoutConstraint.activate([
             scrimView.topAnchor.constraint(equalTo: view.topAnchor),
@@ -184,32 +177,44 @@ final class CustomMediaPickerViewController: UIViewController,
             scrimView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scrimView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            sheetTopConstraint,
+            sheetContainer.topAnchor.constraint(equalTo: view.topAnchor),
             sheetContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             sheetContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             sheetContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
     }
 
-    private func setupDragHandle() {
-        dragHandleArea.translatesAutoresizingMaskIntoConstraints = false
-        let pan = UIPanGestureRecognizer(target: self, action: #selector(handleSheetPan(_:)))
-        dragHandleArea.addGestureRecognizer(pan)
-        sheetContainer.addSubview(dragHandleArea)
-
-        dragHandlePill.backgroundColor = config.theme.handleColor
-        dragHandlePill.layer.cornerRadius = 2.5
-        dragHandlePill.translatesAutoresizingMaskIntoConstraints = false
-        dragHandleArea.addSubview(dragHandlePill)
+    private func setupCollectionView() {
+        collectionView = UICollectionView(frame: .zero, collectionViewLayout: makeCompositionalLayout())
+        collectionView.backgroundColor = config.theme.backgroundColor
+        collectionView.contentInsetAdjustmentBehavior = .never
+        collectionView.contentInset = UIEdgeInsets(top: 24, left: 0, bottom: 96, right: 0)
+        collectionView.alwaysBounceVertical = true
+        collectionView.dataSource = self
+        collectionView.delegate = self
+        collectionView.register(MediaThumbnailCell.self, forCellWithReuseIdentifier: MediaThumbnailCell.reuseId)
+        collectionView.register(CameraPreviewCell.self, forCellWithReuseIdentifier: CameraPreviewCell.reuseId)
+        collectionView.translatesAutoresizingMaskIntoConstraints = false
+        sheetContainer.addSubview(collectionView)
 
         NSLayoutConstraint.activate([
-            dragHandleArea.topAnchor.constraint(equalTo: sheetContainer.safeAreaLayoutGuide.topAnchor),
-            dragHandleArea.leadingAnchor.constraint(equalTo: sheetContainer.leadingAnchor),
-            dragHandleArea.trailingAnchor.constraint(equalTo: sheetContainer.trailingAnchor),
-            dragHandleArea.heightAnchor.constraint(equalToConstant: 26),
+            collectionView.topAnchor.constraint(equalTo: sheetContainer.topAnchor),
+            collectionView.leadingAnchor.constraint(equalTo: sheetContainer.leadingAnchor),
+            collectionView.trailingAnchor.constraint(equalTo: sheetContainer.trailingAnchor),
+            collectionView.bottomAnchor.constraint(equalTo: sheetContainer.bottomAnchor),
+        ])
+    }
 
-            dragHandlePill.centerXAnchor.constraint(equalTo: dragHandleArea.centerXAnchor),
-            dragHandlePill.centerYAnchor.constraint(equalTo: dragHandleArea.centerYAnchor),
+    private func setupDragHandle() {
+        dragHandlePill.backgroundColor = config.theme.handleColor
+        dragHandlePill.layer.cornerRadius = 2.5
+        dragHandlePill.isUserInteractionEnabled = false
+        dragHandlePill.translatesAutoresizingMaskIntoConstraints = false
+        sheetContainer.addSubview(dragHandlePill)
+
+        NSLayoutConstraint.activate([
+            dragHandlePill.topAnchor.constraint(equalTo: sheetContainer.topAnchor, constant: 10),
+            dragHandlePill.centerXAnchor.constraint(equalTo: sheetContainer.centerXAnchor),
             dragHandlePill.widthAnchor.constraint(equalToConstant: 40),
             dragHandlePill.heightAnchor.constraint(equalToConstant: 5),
         ])
@@ -236,8 +241,10 @@ final class CustomMediaPickerViewController: UIViewController,
         manageBtn.addTarget(self, action: #selector(handleManageLimitedAccess), for: .touchUpInside)
         limitedBanner.addSubview(manageBtn)
 
+        collectionView.contentInset = UIEdgeInsets(top: 64, left: 0, bottom: 96, right: 0)
+
         NSLayoutConstraint.activate([
-            limitedBanner.topAnchor.constraint(equalTo: dragHandleArea.bottomAnchor),
+            limitedBanner.topAnchor.constraint(equalTo: sheetContainer.safeAreaLayoutGuide.topAnchor, constant: 56),
             limitedBanner.leadingAnchor.constraint(equalTo: sheetContainer.leadingAnchor),
             limitedBanner.trailingAnchor.constraint(equalTo: sheetContainer.trailingAnchor),
             limitedBanner.heightAnchor.constraint(equalToConstant: 40),
@@ -251,34 +258,11 @@ final class CustomMediaPickerViewController: UIViewController,
         ])
     }
 
-    private func setupGridAndCollectionView() {
-        gridContainer.translatesAutoresizingMaskIntoConstraints = false
-        sheetContainer.addSubview(gridContainer)
-
-        let topAnchor = authStatus == .limited ? limitedBanner.bottomAnchor : dragHandleArea.bottomAnchor
-        NSLayoutConstraint.activate([
-            gridContainer.topAnchor.constraint(equalTo: topAnchor),
-            gridContainer.leadingAnchor.constraint(equalTo: sheetContainer.leadingAnchor),
-            gridContainer.trailingAnchor.constraint(equalTo: sheetContainer.trailingAnchor),
-            gridContainer.bottomAnchor.constraint(equalTo: sheetContainer.bottomAnchor),
-        ])
-
-        collectionView = UICollectionView(frame: .zero, collectionViewLayout: makeCompositionalLayout())
-        collectionView.backgroundColor = config.theme.backgroundColor
-        collectionView.contentInset = UIEdgeInsets(top: 62, left: 0, bottom: 92, right: 0)
-        collectionView.dataSource = self
-        collectionView.delegate = self
-        collectionView.register(MediaThumbnailCell.self, forCellWithReuseIdentifier: MediaThumbnailCell.reuseId)
-        collectionView.register(CameraPreviewCell.self, forCellWithReuseIdentifier: CameraPreviewCell.reuseId)
-        collectionView.translatesAutoresizingMaskIntoConstraints = false
-        gridContainer.addSubview(collectionView)
-
-        NSLayoutConstraint.activate([
-            collectionView.topAnchor.constraint(equalTo: gridContainer.topAnchor),
-            collectionView.leadingAnchor.constraint(equalTo: gridContainer.leadingAnchor),
-            collectionView.trailingAnchor.constraint(equalTo: gridContainer.trailingAnchor),
-            collectionView.bottomAnchor.constraint(equalTo: gridContainer.bottomAnchor),
-        ])
+    private func setupUnifiedSheetPanGesture() {
+        sheetPanGesture = UIPanGestureRecognizer(target: self, action: #selector(handleUnifiedPan(_:)))
+        sheetPanGesture.delegate = self
+        sheetPanGesture.cancelsTouchesInView = false
+        sheetContainer.addGestureRecognizer(sheetPanGesture)
     }
 
     /// Builds a compositional layout whose Section 0 renders the optional 1x2
@@ -335,7 +319,7 @@ final class CustomMediaPickerViewController: UIViewController,
                     count: 2
                 )
 
-                let heroHeightFrac = (2.0 / cols)
+                let heroHeightFrac = 2.0 / cols
                 let heroGroup = NSCollectionLayoutGroup.horizontal(
                     layoutSize: NSCollectionLayoutSize(
                         widthDimension: .fractionalWidth(1.0),
@@ -369,7 +353,7 @@ final class CustomMediaPickerViewController: UIViewController,
 
     private func setupFloatingTopBar() {
         topBar.translatesAutoresizingMaskIntoConstraints = false
-        gridContainer.addSubview(topBar)
+        sheetContainer.addSubview(topBar)
 
         let backIcon = UIImage(
             systemName: "arrow.left",
@@ -381,7 +365,6 @@ final class CustomMediaPickerViewController: UIViewController,
         backButton.addTarget(self, action: #selector(handleCancel), for: .touchUpInside)
         topBar.addSubview(backButton)
 
-        // Album dropdown pill with native SF Symbol chevron.down / 带原生 SF Symbol 下拉箭头的相册胶囊按钮
         let chevronIcon = UIImage(
             systemName: "chevron.down",
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .bold)
@@ -399,9 +382,9 @@ final class CustomMediaPickerViewController: UIViewController,
         topBar.addSubview(albumPillButton)
 
         NSLayoutConstraint.activate([
-            topBar.topAnchor.constraint(equalTo: gridContainer.topAnchor, constant: 6),
-            topBar.leadingAnchor.constraint(equalTo: gridContainer.leadingAnchor, constant: 14),
-            topBar.trailingAnchor.constraint(equalTo: gridContainer.trailingAnchor, constant: -14),
+            topBar.topAnchor.constraint(equalTo: sheetContainer.safeAreaLayoutGuide.topAnchor, constant: 6),
+            topBar.leadingAnchor.constraint(equalTo: sheetContainer.leadingAnchor, constant: 14),
+            topBar.trailingAnchor.constraint(equalTo: sheetContainer.trailingAnchor, constant: -14),
             topBar.heightAnchor.constraint(equalToConstant: 46),
 
             backButton.leadingAnchor.constraint(equalTo: topBar.leadingAnchor),
@@ -461,7 +444,7 @@ final class CustomMediaPickerViewController: UIViewController,
         fastScrollThumb.isHidden = true
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handleFastScrollPan(_:)))
         fastScrollThumb.addGestureRecognizer(pan)
-        gridContainer.addSubview(fastScrollThumb)
+        sheetContainer.addSubview(fastScrollThumb)
 
         dateBubbleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
         dateBubbleLabel.textColor = config.theme.dateBubbleTextColor
@@ -472,16 +455,16 @@ final class CustomMediaPickerViewController: UIViewController,
         dateBubbleLabel.alpha = 0
         dateBubbleLabel.isHidden = true
         dateBubbleLabel.translatesAutoresizingMaskIntoConstraints = false
-        gridContainer.addSubview(dateBubbleLabel)
+        sheetContainer.addSubview(dateBubbleLabel)
 
         fastScrollTopConstraint = fastScrollThumb.topAnchor.constraint(
-            equalTo: gridContainer.topAnchor,
-            constant: 68
+            equalTo: sheetContainer.safeAreaLayoutGuide.topAnchor,
+            constant: 64
         )
 
         NSLayoutConstraint.activate([
             fastScrollTopConstraint,
-            fastScrollThumb.trailingAnchor.constraint(equalTo: gridContainer.trailingAnchor, constant: -6),
+            fastScrollThumb.trailingAnchor.constraint(equalTo: sheetContainer.trailingAnchor, constant: -6),
             fastScrollThumb.widthAnchor.constraint(equalToConstant: 38),
             fastScrollThumb.heightAnchor.constraint(equalToConstant: 38),
 
@@ -500,7 +483,7 @@ final class CustomMediaPickerViewController: UIViewController,
         bottomBar.layer.shadowOffset = CGSize(width: 0, height: -2)
         bottomBar.isHidden = true
         bottomBar.translatesAutoresizingMaskIntoConstraints = false
-        gridContainer.addSubview(bottomBar)
+        sheetContainer.addSubview(bottomBar)
 
         selectedCountLabel.font = .systemFont(ofSize: 14, weight: .medium)
         selectedCountLabel.textColor = config.theme.textColor
@@ -517,16 +500,16 @@ final class CustomMediaPickerViewController: UIViewController,
         bottomBar.addSubview(confirmButton)
 
         NSLayoutConstraint.activate([
-            bottomBar.leadingAnchor.constraint(equalTo: gridContainer.leadingAnchor),
-            bottomBar.trailingAnchor.constraint(equalTo: gridContainer.trailingAnchor),
-            bottomBar.bottomAnchor.constraint(equalTo: gridContainer.bottomAnchor),
+            bottomBar.leadingAnchor.constraint(equalTo: sheetContainer.leadingAnchor),
+            bottomBar.trailingAnchor.constraint(equalTo: sheetContainer.trailingAnchor),
+            bottomBar.bottomAnchor.constraint(equalTo: sheetContainer.bottomAnchor),
 
             selectedCountLabel.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor, constant: 18),
             selectedCountLabel.centerYAnchor.constraint(equalTo: confirmButton.centerYAnchor),
 
             confirmButton.topAnchor.constraint(equalTo: bottomBar.topAnchor, constant: 12),
             confirmButton.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor, constant: -16),
-            confirmButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
+            confirmButton.bottomAnchor.constraint(equalTo: sheetContainer.safeAreaLayoutGuide.bottomAnchor, constant: -12),
         ])
     }
 
@@ -552,13 +535,175 @@ final class CustomMediaPickerViewController: UIViewController,
         settingsButton.addTarget(self, action: #selector(handleOpenSettings), for: .touchUpInside)
         emptyStateStack.addArrangedSubview(settingsButton)
 
-        gridContainer.addSubview(emptyStateStack)
+        sheetContainer.addSubview(emptyStateStack)
         NSLayoutConstraint.activate([
-            emptyStateStack.centerXAnchor.constraint(equalTo: gridContainer.centerXAnchor),
-            emptyStateStack.centerYAnchor.constraint(equalTo: gridContainer.centerYAnchor),
-            emptyStateStack.leadingAnchor.constraint(greaterThanOrEqualTo: gridContainer.leadingAnchor, constant: 32),
-            emptyStateStack.trailingAnchor.constraint(lessThanOrEqualTo: gridContainer.trailingAnchor, constant: -32),
+            emptyStateStack.centerXAnchor.constraint(equalTo: sheetContainer.centerXAnchor),
+            emptyStateStack.centerYAnchor.constraint(equalTo: sheetContainer.centerYAnchor),
+            emptyStateStack.leadingAnchor.constraint(greaterThanOrEqualTo: sheetContainer.leadingAnchor, constant: 32),
+            emptyStateStack.trailingAnchor.constraint(lessThanOrEqualTo: sheetContainer.trailingAnchor, constant: -32),
         ])
+    }
+
+    // MARK: - Sheet Physics & Nested Scroll Coordination / 抽屉物理动画与嵌套手势协调
+
+    /// Applies pure GPU visual state for any vertical sheet offset without
+    /// mutating Auto Layout constraints or collectionView insets.
+    /// 根据抽屉垂直偏移量实时更新纯 GPU 视觉属性（圆角、遮罩、拖拽条、悬浮顶栏），
+    /// 全程不改约束与列表内边距，彻底杜绝跳变与卡顿。
+    private func applySheetOffset(_ offsetY: CGFloat) {
+        let clamped = min(max(offsetY, 0), screenHeight)
+        currentSheetOffsetY = clamped
+        sheetContainer.transform = CGAffineTransform(translationX: 0, y: clamped)
+
+        let half = max(collapsedTopOffset, 1)
+        let expandProgress = min(max(1.0 - (clamped / half), 0), 1)
+
+        if clamped <= half {
+            scrimView.alpha = 1.0
+        } else {
+            let dismissRange = max(screenHeight - half, 1)
+            scrimView.alpha = min(max(1.0 - ((clamped - half) / dismissRange), 0), 1)
+        }
+
+        sheetContainer.layer.cornerRadius = config.theme.sheetCornerRadius * (1.0 - expandProgress)
+        dragHandlePill.alpha = min(max(1.0 - expandProgress * 1.8, 0), 1)
+
+        let isDenied = authStatus != .authorized && authStatus != .limited
+        let topBarAlpha: CGFloat = isDenied ? 1.0 : min(max((expandProgress - 0.35) / 0.65, 0), 1)
+        topBar.alpha = topBarAlpha
+        topBar.isUserInteractionEnabled = topBarAlpha > 0.1
+        topBar.transform = CGAffineTransform(translationX: 0, y: -(1.0 - topBarAlpha) * 14)
+    }
+
+    private func animateSheet(
+        toOffset targetOffset: CGFloat,
+        duration: TimeInterval = 0.30,
+        damping: CGFloat = 0.90,
+        completion: (() -> Void)? = nil
+    ) {
+        UIView.animate(
+            withDuration: duration,
+            delay: 0,
+            usingSpringWithDamping: damping,
+            initialSpringVelocity: 0.3,
+            options: [.curveEaseOut, .allowUserInteraction],
+            animations: {
+                self.applySheetOffset(targetOffset)
+            },
+            completion: { _ in
+                completion?()
+            }
+        )
+    }
+
+    private func dismissAnimated(completion: @escaping () -> Void) {
+        guard !isDismissing else { return }
+        isDismissing = true
+        dismissPopover()
+        stopVisibleCameraCells()
+        UIView.animate(withDuration: 0.23, delay: 0, options: [.curveEaseIn], animations: {
+            self.applySheetOffset(self.screenHeight)
+        }, completion: { _ in
+            self.dismiss(animated: false, completion: completion)
+        })
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        if gestureRecognizer === sheetPanGesture && otherGestureRecognizer === collectionView.panGestureRecognizer {
+            return true
+        }
+        return false
+    }
+
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard gestureRecognizer === sheetPanGesture else { return true }
+        let loc = gestureRecognizer.location(in: sheetContainer)
+        if !fastScrollThumb.isHidden && fastScrollThumb.frame.insetBy(dx: -8, dy: -8).contains(loc) {
+            return false
+        }
+        if !bottomBar.isHidden && bottomBar.frame.contains(loc) {
+            return false
+        }
+        let velocity = sheetPanGesture.velocity(in: sheetContainer)
+        return abs(velocity.y) >= abs(velocity.x)
+    }
+
+    @objc private func handleUnifiedPan(_ gesture: UIPanGestureRecognizer) {
+        guard !isDismissing else { return }
+        let translation = gesture.translation(in: view)
+        let velocityY = gesture.velocity(in: view).y
+        let topRestOffset = -collectionView.contentInset.top
+        let isGridAtTop = collectionView.contentOffset.y <= topRestOffset + 1.5
+
+        switch gesture.state {
+        case .began:
+            panStartOffsetY = currentSheetOffsetY
+            panStartedInFullscreen = currentSheetOffsetY <= 2.0
+            isDraggingSheet = false
+
+        case .changed:
+            let shouldDragSheet: Bool
+            if isDraggingSheet {
+                shouldDragSheet = true
+            } else if currentSheetOffsetY > 2.0 {
+                // Half-screen: any vertical swipe moves the sheet 1:1 with finger.
+                // 半屏状态：任意上下滑动均 1:1 跟手移动抽屉。
+                shouldDragSheet = true
+            } else if isGridAtTop && translation.y > 2.0 {
+                // Full-screen at top of grid: downward swipe smoothly pulls back to half-screen.
+                // 全屏且网格已滑到顶部：向下拉动无缝过渡为下拉抽屉回半屏。
+                shouldDragSheet = true
+            } else {
+                shouldDragSheet = false
+            }
+
+            if shouldDragSheet {
+                if !isDraggingSheet {
+                    isDraggingSheet = true
+                    dismissPopover()
+                    panStartOffsetY = currentSheetOffsetY
+                    gesture.setTranslation(.zero, in: view)
+                    return
+                }
+                // Lock grid at top while sheet tracks the finger so content never jumps.
+                // 抽屉跟手期间锁定网格在顶部，避免列表同时滚动造成跳动。
+                if collectionView.contentOffset.y != topRestOffset {
+                    collectionView.contentOffset = CGPoint(x: 0, y: topRestOffset)
+                }
+                let nextOffset = max(0, panStartOffsetY + translation.y)
+                applySheetOffset(nextOffset)
+            }
+
+        case .ended, .cancelled:
+            guard isDraggingSheet else { return }
+            isDraggingSheet = false
+            let offset = currentSheetOffsetY
+            let half = collapsedTopOffset
+
+            if velocityY < -550 {
+                animateSheet(toOffset: 0)
+            } else if velocityY > 1800 {
+                handleCancel()
+            } else if velocityY > 550 {
+                if panStartedInFullscreen && offset < half * 1.15 {
+                    animateSheet(toOffset: half)
+                } else {
+                    handleCancel()
+                }
+            } else if offset < half * 0.5 {
+                animateSheet(toOffset: 0)
+            } else if offset <= half + screenHeight * 0.17 {
+                animateSheet(toOffset: half)
+            } else {
+                handleCancel()
+            }
+
+        default:
+            break
+        }
     }
 
     // MARK: - Data Loading & PhotoLibrary Observation / 数据加载与监听
@@ -632,7 +777,7 @@ final class CustomMediaPickerViewController: UIViewController,
         guard let album = currentAlbum else { return nil }
         if hasHeroCameraSection() {
             if indexPath.section == 0 {
-                if indexPath.item == 0 { return nil } // Camera tile / 相机格
+                if indexPath.item == 0 { return nil }
                 let idx = indexPath.item - 1
                 return idx < album.count ? idx : nil
             } else {
@@ -643,17 +788,7 @@ final class CustomMediaPickerViewController: UIViewController,
         return indexPath.item < album.count ? indexPath.item : nil
     }
 
-    // MARK: - Actions & Gestures / 交互与手势
-
-    private func dismissAnimated(completion: @escaping () -> Void) {
-        stopVisibleCameraCells()
-        UIView.animate(withDuration: 0.24, delay: 0, options: [.curveEaseIn], animations: {
-            self.scrimView.alpha = 0
-            self.sheetContainer.transform = CGAffineTransform(translationX: 0, y: UIScreen.main.bounds.height)
-        }, completion: { _ in
-            self.dismiss(animated: false, completion: completion)
-        })
-    }
+    // MARK: - Actions & Popovers / 交互按钮与浮窗菜单
 
     @objc private func handleCancel() {
         guard !deliveredResult else { return }
@@ -673,59 +808,10 @@ final class CustomMediaPickerViewController: UIViewController,
         }
     }
 
-    private func applyExpansionVisuals(progress: CGFloat) {
-        let p = min(max(progress, 0), 1)
-        sheetContainer.layer.cornerRadius = config.theme.sheetCornerRadius * (1 - p)
-        dragHandlePill.alpha = max(0, 1 - p * 1.6)
-        let isDenied = authStatus != .authorized && authStatus != .limited
-        let topBarAlpha: CGFloat = isDenied ? 1.0 : min(max((p - 0.35) / 0.65, 0), 1)
-        topBar.alpha = topBarAlpha
-        topBar.isUserInteractionEnabled = topBarAlpha > 0.1
-        collectionView.contentInset = UIEdgeInsets(top: 62 * p, left: 0, bottom: 92, right: 0)
-    }
-
-    @objc private func handleSheetPan(_ gesture: UIPanGestureRecognizer) {
-        let translation = gesture.translation(in: view)
-        let baseOffset: CGFloat = isExpanded ? 0 : collapsedTopOffset
-        switch gesture.state {
-        case .changed:
-            let y = max(0, baseOffset + translation.y)
-            sheetTopConstraint.constant = y
-            let progress = 1.0 - min(max(y / max(collapsedTopOffset, 1), 0), 1)
-            applyExpansionVisuals(progress: progress)
-        case .ended, .cancelled:
-            let currentY = sheetTopConstraint.constant
-            if currentY < collapsedTopOffset * 0.55 {
-                animateSheet(expanded: true)
-            } else if currentY > collapsedTopOffset + view.bounds.height * 0.16 {
-                handleCancel()
-            } else {
-                animateSheet(expanded: false)
-            }
-        default:
-            break
-        }
-    }
-
-    private func animateSheet(expanded: Bool) {
-        isExpanded = expanded
-        sheetTopConstraint.constant = expanded ? 0 : collapsedTopOffset
-        UIView.animate(
-            withDuration: 0.28,
-            delay: 0,
-            usingSpringWithDamping: 0.9,
-            initialSpringVelocity: 0.3,
-            options: [.curveEaseOut]
-        ) {
-            self.applyExpansionVisuals(progress: expanded ? 1.0 : 0.0)
-            self.view.layoutIfNeeded()
-        }
-    }
-
     @objc private func handleFastScrollPan(_ gesture: UIPanGestureRecognizer) {
-        let trackTop: CGFloat = 68
-        let trackBottom = max(trackTop + 1, gridContainer.bounds.height - 104)
-        let locationY = gesture.location(in: gridContainer).y
+        let trackTop: CGFloat = 64
+        let trackBottom = max(trackTop + 1, sheetContainer.bounds.height - 160)
+        let locationY = gesture.location(in: sheetContainer).y - sheetContainer.safeAreaInsets.top
         let clampedY = min(max(locationY, trackTop), trackBottom)
         let fraction = (clampedY - trackTop) / (trackBottom - trackTop)
 
@@ -760,6 +846,8 @@ final class CustomMediaPickerViewController: UIViewController,
         card.layer.shadowOpacity = 0.2
         card.layer.shadowRadius = 14
         card.layer.shadowOffset = CGSize(width: 0, height: 6)
+        card.alpha = 0
+        card.transform = CGAffineTransform(scaleX: 0.94, y: 0.94)
         card.translatesAutoresizingMaskIntoConstraints = false
         backdrop.addSubview(card)
 
@@ -843,6 +931,11 @@ final class CustomMediaPickerViewController: UIViewController,
             stack.bottomAnchor.constraint(equalTo: scroll.bottomAnchor),
             stack.widthAnchor.constraint(equalTo: scroll.widthAnchor),
         ])
+
+        UIView.animate(withDuration: 0.16, delay: 0, options: [.curveEaseOut]) {
+            card.alpha = 1
+            card.transform = .identity
+        }
     }
 
     @objc private func handleAlbumSelected(_ sender: UIButton) {
@@ -869,6 +962,8 @@ final class CustomMediaPickerViewController: UIViewController,
         card.layer.shadowOpacity = 0.2
         card.layer.shadowRadius = 14
         card.layer.shadowOffset = CGSize(width: 0, height: 6)
+        card.alpha = 0
+        card.transform = CGAffineTransform(scaleX: 0.94, y: 0.94)
         card.translatesAutoresizingMaskIntoConstraints = false
         backdrop.addSubview(card)
 
@@ -899,6 +994,11 @@ final class CustomMediaPickerViewController: UIViewController,
             openBtn.trailingAnchor.constraint(equalTo: card.trailingAnchor),
             openBtn.bottomAnchor.constraint(equalTo: card.bottomAnchor),
         ])
+
+        UIView.animate(withDuration: 0.16, delay: 0, options: [.curveEaseOut]) {
+            card.alpha = 1
+            card.transform = .identity
+        }
     }
 
     @objc private func handleOpenInOtherAppTap() {
@@ -956,12 +1056,25 @@ final class CustomMediaPickerViewController: UIViewController,
         collectionView.reloadData()
         let count = selectedAssetIds.count
         if count > 0 {
-            bottomBar.isHidden = false
             let suffix = config.maxFiles.map { " / \($0)" } ?? ""
             selectedCountLabel.text = "\(count)\(suffix)"
             confirmButton.setTitle("\(config.strings.done) (\(count))", for: .normal)
-        } else {
-            bottomBar.isHidden = true
+            if bottomBar.isHidden {
+                bottomBar.isHidden = false
+                bottomBar.alpha = 0
+                bottomBar.transform = CGAffineTransform(translationX: 0, y: 36)
+                UIView.animate(withDuration: 0.2) {
+                    self.bottomBar.alpha = 1
+                    self.bottomBar.transform = .identity
+                }
+            }
+        } else if !bottomBar.isHidden {
+            UIView.animate(withDuration: 0.16, animations: {
+                self.bottomBar.alpha = 0
+                self.bottomBar.transform = CGAffineTransform(translationX: 0, y: 36)
+            }, completion: { _ in
+                self.bottomBar.isHidden = true
+            })
         }
     }
 
@@ -1036,8 +1149,7 @@ final class CustomMediaPickerViewController: UIViewController,
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         if hasHeroCameraSection(), indexPath.section == 0, indexPath.item == 0 {
             deliveredResult = true
-            stopVisibleCameraCells()
-            dismiss(animated: true) {
+            dismissAnimated {
                 self.onLaunchCamera()
             }
             return
@@ -1071,10 +1183,15 @@ final class CustomMediaPickerViewController: UIViewController,
     // MARK: - Scroll Tracking & Fast Scroller / 滚动联动与日期浮窗
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        // Expand sheet automatically when user scrolls downward.
-        // 用户向下浏览网格时自动平滑展开至全屏。
-        if !isExpanded, scrollView.contentOffset.y > -scrollView.contentInset.top + 24 {
-            animateSheet(expanded: true)
+        // Keep grid pinned to top while sheet is being dragged so content never jumps.
+        // 拖拽抽屉期间锁定列表在顶部，避免与抽屉位移动画打架。
+        if isDraggingSheet || currentSheetOffsetY > 2.0 {
+            let topRest = -scrollView.contentInset.top
+            if scrollView.contentOffset.y != topRest {
+                scrollView.contentOffset = CGPoint(x: 0, y: topRest)
+            }
+            fastScrollThumb.isHidden = true
+            return
         }
 
         let total = currentAlbum?.count ?? 0
@@ -1084,8 +1201,8 @@ final class CustomMediaPickerViewController: UIViewController,
 
         let maxOffset = max(1, scrollView.contentSize.height - scrollView.bounds.height)
         let fraction = min(max(0, (scrollView.contentOffset.y + scrollView.contentInset.top) / maxOffset), 1)
-        let trackTop: CGFloat = 68
-        let trackBottom = max(trackTop + 1, gridContainer.bounds.height - 104)
+        let trackTop: CGFloat = 64
+        let trackBottom = max(trackTop + 1, sheetContainer.bounds.height - 160)
         fastScrollTopConstraint.constant = trackTop + fraction * (trackBottom - trackTop)
 
         if scrollView.isDragging || scrollView.isDecelerating {

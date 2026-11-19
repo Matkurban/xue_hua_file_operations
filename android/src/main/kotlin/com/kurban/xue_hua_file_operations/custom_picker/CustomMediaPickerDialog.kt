@@ -6,8 +6,11 @@ import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Dialog
+import android.content.Context
 import android.graphics.Color
+import android.graphics.Outline
 import android.graphics.PorterDuff
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
@@ -20,8 +23,11 @@ import android.text.TextUtils
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.VelocityTracker
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
+import android.view.ViewOutlineProvider
 import android.view.Window
 import android.view.WindowManager
 import android.view.animation.DecelerateInterpolator
@@ -40,20 +46,18 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.kurban.xue_hua_file_operations.R
 import kotlin.concurrent.thread
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
  * Customizable native sheet-style media picker for Android.
- * Features edge-to-edge translucent system bars, fluid open/close/expand animations,
- * half-sheet to fullscreen transition (with floating pill top bar fading in on expand),
- * album dropdown popover, overflow menu ("Open in other app..."), optional 1x2 live
- * camera preview tile, right-edge fast scroller with floating month-year bubble,
- * full-screen preview dialog, and bottom confirmation bar.
+ * Uses a unified nested-scroll gesture container so dragging anywhere on the sheet
+ * or grid smoothly tracks the finger 1:1 between half-screen, full-screen, and
+ * dismiss states with velocity-aware snapping and zero layout jitter.
  *
  * Android 端可自定义样式的原生抽屉式媒体选择器。
- * 支持沉浸式透明状态栏/导航栏、流畅的弹出/收起/展开动画、半屏到全屏平滑联动
- * （半屏隐藏悬浮顶栏、上拉全屏后渐显）、相册下拉浮窗、更多菜单（使用其它应用打开…）、
- * 可配置的左上角 1×2 实时相机预览格、右侧快速滚动与日期浮窗、全屏预览页及底部确认栏。
+ * 采用统一嵌套滑动手势容器：支持在面板或网格任意位置跟手 1:1 上拉展开至全屏、
+ * 全屏滚到顶部后无缝下拉回半屏或继续下拉关闭，结合速度感知吸附动画且全程无布局抖动。
  */
 class CustomMediaPickerDialog(
     private val hostActivity: Activity,
@@ -80,9 +84,9 @@ class CustomMediaPickerDialog(
 
     private var deliveredResult = false
     private var isDismissing = false
-    private var isExpanded = config.initialExpanded
-    private var expansionProgress = if (config.initialExpanded) 1f else 0f
-    private var collapsedTopOffsetPx = 0
+    private var currentSheetOffsetY = 0f
+    private var currentCornerRadiusPx = 0f
+    private var collapsedTopOffsetPx = 0f
     private var screenHeightPx = 0
     private var screenWidthPx = 0
     private var cellSizePx = 0
@@ -91,8 +95,8 @@ class CustomMediaPickerDialog(
     private var navBarHeightPx = 0
 
     private lateinit var scrimView: View
-    private lateinit var sheetContainer: FrameLayout
-    private lateinit var dragHandleContainer: FrameLayout
+    private lateinit var sheetContainer: SheetGestureContainer
+    private lateinit var dragHandlePill: View
     private lateinit var limitedBanner: LinearLayout
     private lateinit var topBarContainer: FrameLayout
     private lateinit var albumTitleText: TextView
@@ -126,15 +130,14 @@ class CustomMediaPickerDialog(
         spacingPx = (config.theme.gridSpacingDp * density).roundToInt()
         cellSizePx = ((screenWidthPx - spacingPx * (config.crossAxisCount - 1)) / config.crossAxisCount)
             .coerceAtLeast(1)
-        collapsedTopOffsetPx = (screenHeightPx * 0.40f).roundToInt()
+        collapsedTopOffsetPx = screenHeightPx * 0.42f
 
         val root = FrameLayout(hostActivity).apply {
             clipChildren = false
             clipToPadding = false
         }
 
-        // Dimmed backdrop scrim (animated separately from sheet)
-        // 独立控制的背景半透明遮罩层（支持平滑淡入淡出）
+        // Dimmed backdrop scrim / 半透明背景遮罩
         scrimView = View(hostActivity).apply {
             setBackgroundColor(config.theme.scrimColor)
             alpha = 0f
@@ -146,9 +149,17 @@ class CustomMediaPickerDialog(
         }
         root.addView(scrimView)
 
-        sheetContainer = FrameLayout(hostActivity).apply {
-            clipChildren = false
-            clipToPadding = false
+        // Full-height gesture-aware sheet container with GPU rounded-top clipping
+        // 全高嵌套手势抽屉容器，采用 OutlineProvider 实现高性能 GPU 顶部圆角裁剪
+        sheetContainer = SheetGestureContainer(hostActivity).apply {
+            setBackgroundColor(config.theme.backgroundColor)
+            clipToOutline = true
+            outlineProvider = object : ViewOutlineProvider() {
+                override fun getOutline(view: View, outline: Outline) {
+                    val r = currentCornerRadiusPx
+                    outline.setRoundRect(0, 0, view.width, view.height + r.roundToInt(), r)
+                }
+            }
             isClickable = true
             isFocusable = true
             layoutParams = FrameLayout.LayoutParams(
@@ -157,39 +168,6 @@ class CustomMediaPickerDialog(
             )
         }
         root.addView(sheetContainer)
-
-        val contentColumn = LinearLayout(hostActivity).apply {
-            orientation = LinearLayout.VERTICAL
-            clipChildren = false
-            clipToPadding = false
-            layoutParams = FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-        }
-        sheetContainer.addView(contentColumn)
-
-        // Drag handle area / 顶部拖拽指示条区域
-        dragHandleContainer = buildDragHandleArea(density)
-        contentColumn.addView(dragHandleContainer)
-
-        // Limited-access banner (Android 14+ partial photo access)
-        // Android 14+ 部分照片授权顶部提示条
-        limitedBanner = buildLimitedAccessBanner(density)
-        limitedBanner.visibility = if (isLimitedAccess && !isPermissionDenied) View.VISIBLE else View.GONE
-        contentColumn.addView(limitedBanner)
-
-        // Grid + floating overlays container / 媒体网格与悬浮控件容器
-        val gridWrapper = FrameLayout(hostActivity).apply {
-            clipChildren = false
-            clipToPadding = false
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
-        }
-        contentColumn.addView(gridWrapper)
 
         val gridLayoutManager = GridLayoutManager(hostActivity, config.crossAxisCount).apply {
             spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
@@ -203,37 +181,62 @@ class CustomMediaPickerDialog(
             adapter = gridAdapter
             clipToPadding = false
             overScrollMode = View.OVER_SCROLL_NEVER
+            setPadding(0, dp(24), 0, dp(88))
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
         }
         attachScrollListeners()
-        gridWrapper.addView(recyclerView)
+        sheetContainer.addView(recyclerView)
 
         // Empty / Permission-denied state / 空态或无权限状态视图
         emptyStateContainer = buildEmptyOrDeniedView(density)
-        gridWrapper.addView(emptyStateContainer)
+        sheetContainer.addView(emptyStateContainer)
 
-        // Floating pill top bar (fades in smoothly when expanding to fullscreen)
-        // 顶部悬浮胶囊操作栏（半屏时隐藏，上拉展开至全屏时平滑渐显）
+        // Top drag handle pill overlaid cleanly above the grid (no layout reflow during drag)
+        // 顶部居中拖拽指示条（悬浮叠加，拖拽过程零布局重排）
+        dragHandlePill = View(hostActivity).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 3 * density
+                setColor(config.theme.handleColor)
+            }
+            layoutParams = FrameLayout.LayoutParams(
+                (40 * density).roundToInt(),
+                (5 * density).roundToInt(),
+                Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            ).apply {
+                topMargin = (10 * density).roundToInt()
+            }
+        }
+        sheetContainer.addView(dragHandlePill)
+
+        // Optional limited-access banner (Android 14+ partial photo access)
+        // Android 14+ 部分照片授权提示条
+        limitedBanner = buildLimitedAccessBanner(density)
+        limitedBanner.visibility = if (isLimitedAccess && !isPermissionDenied) View.VISIBLE else View.GONE
+        sheetContainer.addView(limitedBanner)
+
+        // Floating pill top bar (fades in smoothly as sheet approaches fullscreen)
+        // 顶部悬浮胶囊操作栏（半屏隐藏，随上拉展开平滑渐显）
         topBarContainer = buildFloatingTopBar(density)
-        gridWrapper.addView(topBarContainer)
+        sheetContainer.addView(topBarContainer)
 
-        // Fast-scroll thumb & floating date bubble / 右侧快滑手柄与月份年份浮窗
-        buildFastScrollerOverlays(gridWrapper, density)
+        // Fast-scroll thumb & floating date bubble / 右侧快滑手柄与日期浮窗
+        buildFastScrollerOverlays(sheetContainer, density)
 
         // Bottom confirmation bar / 底部选中确认栏
         bottomConfirmBar = buildBottomConfirmBar(density)
-        gridWrapper.addView(bottomConfirmBar)
+        sheetContainer.addView(bottomConfirmBar)
 
-        // Listen for real system status bar & navigation bar insets
-        // 动态监听系统状态栏与底部导航栏安全区域
+        // Apply real system status bar & navigation bar insets
+        // 监听并适配系统状态栏与底部导航栏安全区
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             statusBarHeightPx = bars.top
             navBarHeightPx = bars.bottom
-            applyInsetsAndExpansion(expansionProgress)
+            applyStaticInsets()
             insets
         }
 
@@ -258,10 +261,10 @@ class CustomMediaPickerDialog(
         }
 
         // Start off-screen and animate smoothly upward / 从屏幕底部平滑弹出
-        sheetContainer.translationY = screenHeightPx.toFloat()
-        applyInsetsAndExpansion(if (isExpanded) 1f else 0f)
+        applySheetOffset(screenHeightPx.toFloat())
         root.post {
-            animateEntrance()
+            val targetOffset = if (config.initialExpanded) 0f else collapsedTopOffsetPx
+            animateSheetToOffset(targetOffset, durationMs = 300)
         }
 
         if (isPermissionDenied) {
@@ -271,11 +274,6 @@ class CustomMediaPickerDialog(
         }
     }
 
-    /**
-     * Re-checks media read permissions when the dialog regains focus
-     * (e.g. after returning from Android App Settings).
-     * 弹窗重新获得焦点时（例如从系统设置页返回后）自动重新检查相册权限并刷新列表。
-     */
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (!hasFocus || !isShowing) return
@@ -286,24 +284,24 @@ class CustomMediaPickerDialog(
             limitedBanner.visibility = if (limited) View.VISIBLE else View.GONE
             emptyStateContainer.visibility = View.GONE
             recyclerView.visibility = View.VISIBLE
+            applyStaticInsets()
+            applySheetOffset(currentSheetOffsetY)
             loadMediaAsync()
         } else if (!denied && limited != isLimitedAccess) {
             isLimitedAccess = limited
             limitedBanner.visibility = if (limited) View.VISIBLE else View.GONE
+            applyStaticInsets()
             loadMediaAsync()
         }
     }
 
-    /**
-     * Reloads media items after the user updates limited photo permissions.
-     * 用户在 Android 14+ 部分授权管理后重新加载媒体列表。
-     */
     fun reloadMedia() {
         if (!isShowing) return
         val (denied, limited) = onRecheckPermission()
         isPermissionDenied = denied
         isLimitedAccess = limited
         limitedBanner.visibility = if (limited && !denied) View.VISIBLE else View.GONE
+        applyStaticInsets()
         if (!denied) {
             loadMediaAsync()
         }
@@ -330,181 +328,272 @@ class CustomMediaPickerDialog(
         controller.isAppearanceLightNavigationBars = !config.theme.isDark
     }
 
-    private fun animateEntrance() {
-        scrimView.animate()
-            .alpha(1f)
-            .setDuration(240)
-            .setInterpolator(DecelerateInterpolator())
-            .start()
+    private fun applyStaticInsets() {
+        topBarContainer.setPadding(dp(14), statusBarHeightPx + dp(10), dp(14), dp(14))
+        val bannerLp = limitedBanner.layoutParams as FrameLayout.LayoutParams
+        bannerLp.topMargin = statusBarHeightPx + dp(62)
+        limitedBanner.layoutParams = bannerLp
 
-        val targetY = if (isExpanded) 0f else collapsedTopOffsetPx.toFloat()
-        sheetContainer.animate()
-            .translationY(targetY)
-            .setDuration(300)
-            .setInterpolator(sheetInterpolator)
-            .start()
+        val topPad = if (limitedBanner.visibility == View.VISIBLE) dp(64) else dp(24)
+        recyclerView.setPadding(0, topPad, 0, navBarHeightPx + dp(92))
+        bottomConfirmBar.setPadding(dp(16), dp(12), dp(16), dp(16) + navBarHeightPx)
+    }
+
+    /**
+     * Applies all GPU-composited visual properties for a given vertical sheet
+     * offset (`0f` = fullscreen, `collapsedTopOffsetPx` = half-screen,
+     * `screenHeightPx` = dismissed). Zero layout passes or padding mutations!
+     * 根据抽屉垂直偏移量实时更新纯 GPU 视觉属性（圆角、遮罩、拖拽条、悬浮顶栏），
+     * 全程不触发布局重排，确保 60/120fps 顺滑跟手。
+     */
+    private fun applySheetOffset(offsetY: Float) {
+        val clamped = offsetY.coerceIn(0f, screenHeightPx.toFloat())
+        currentSheetOffsetY = clamped
+        sheetContainer.translationY = clamped
+
+        val density = hostActivity.resources.displayMetrics.density
+        val half = collapsedTopOffsetPx.coerceAtLeast(1f)
+
+        // Expand progress: 0f at half-screen -> 1f at fullscreen
+        // 展开进度：0f（半屏）-> 1f（全屏）
+        val expandProgress = (1f - (clamped / half)).coerceIn(0f, 1f)
+
+        // Dismiss fade: 1f at half-screen or higher -> 0f at screen bottom
+        // 收起遮罩透明度：半屏及以上为 1f，继续下拉至底部平滑淡出至 0f
+        val scrimFraction = if (clamped <= half) {
+            1f
+        } else {
+            val dismissRange = (screenHeightPx - half).coerceAtLeast(1f)
+            (1f - ((clamped - half) / dismissRange)).coerceIn(0f, 1f)
+        }
+        scrimView.alpha = scrimFraction
+
+        // Smooth top corner radius via GPU OutlineProvider
+        // 通过 OutlineProvider 平滑插值顶部圆角（半屏圆角 -> 全屏直角）
+        val newRadius = config.theme.sheetCornerRadiusDp * density * (1f - expandProgress)
+        if (abs(newRadius - currentCornerRadiusPx) > 0.25f) {
+            currentCornerRadiusPx = newRadius
+            sheetContainer.invalidateOutline()
+        }
+
+        // Drag handle fades out smoothly as fullscreen is reached
+        // 展开至全屏时平滑淡出顶部拖拽指示条
+        dragHandlePill.alpha = (1f - expandProgress * 1.8f).coerceIn(0f, 1f)
+
+        // Floating top bar smoothly fades & slides in as sheet expands past 35%
+        // 顶部悬浮胶囊栏在半屏隐藏，上拉展开超过 35% 后平滑淡入并微幅下移就位
+        val topBarAlpha = if (isPermissionDenied) {
+            1f
+        } else {
+            ((expandProgress - 0.35f) / 0.65f).coerceIn(0f, 1f)
+        }
+        topBarContainer.alpha = topBarAlpha
+        topBarContainer.visibility = if (topBarAlpha > 0.02f) View.VISIBLE else View.INVISIBLE
+        topBarContainer.translationY = -(1f - topBarAlpha) * (14 * density)
+    }
+
+    private fun animateSheetToOffset(
+        targetOffsetY: Float,
+        durationMs: Long = 260,
+        onEnd: (() -> Unit)? = null,
+    ) {
+        sheetAnimator?.cancel()
+        val startOffset = currentSheetOffsetY
+        val target = targetOffsetY.coerceIn(0f, screenHeightPx.toFloat())
+        if (abs(target - startOffset) < 1f) {
+            applySheetOffset(target)
+            onEnd?.invoke()
+            return
+        }
+        sheetAnimator = ValueAnimator.ofFloat(startOffset, target).apply {
+            duration = durationMs
+            interpolator = sheetInterpolator
+            addUpdateListener { anim ->
+                applySheetOffset(anim.animatedValue as Float)
+            }
+            if (onEnd != null) {
+                addListener(object : AnimatorListenerAdapter() {
+                    private var cancelled = false
+                    override fun onAnimationCancel(animation: Animator) {
+                        cancelled = true
+                    }
+
+                    override fun onAnimationEnd(animation: Animator) {
+                        if (!cancelled) onEnd()
+                    }
+                })
+            }
+            start()
+        }
     }
 
     private fun dismissAnimated(afterDismiss: (() -> Unit)? = null) {
         if (isDismissing) return
         isDismissing = true
         activePopup?.dismiss()
-        sheetAnimator?.cancel()
-
-        scrimView.animate()
-            .alpha(0f)
-            .setDuration(200)
-            .setInterpolator(DecelerateInterpolator())
-            .start()
-
-        sheetContainer.animate()
-            .translationY(screenHeightPx.toFloat())
-            .setDuration(230)
-            .setInterpolator(DecelerateInterpolator())
-            .setListener(object : AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: Animator) {
-                    super@CustomMediaPickerDialog.dismiss()
-                    afterDismiss?.invoke()
-                }
-            })
-            .start()
+        animateSheetToOffset(screenHeightPx.toFloat(), durationMs = 230) {
+            super.dismiss()
+            afterDismiss?.invoke()
+        }
     }
 
-    private fun dp(value: Int): Int = (value * hostActivity.resources.displayMetrics.density).roundToInt()
+    /**
+     * Unified nested-scroll gesture container that coordinates vertical sheet
+     * dragging with [RecyclerView] scrolling seamlessly in both directions.
+     * 统一嵌套滑动手势容器：无缝协调抽屉面板拖拽与 [RecyclerView] 列表滚动，
+     * 支持半屏任意位置上拉全屏、全屏到顶后顺滑下拉回半屏或继续下拉关闭。
+     */
+    private inner class SheetGestureContainer(context: Context) : FrameLayout(context) {
+        private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+        private val density = context.resources.displayMetrics.density
+        private var velocityTracker: VelocityTracker? = null
 
-    private fun applyInsetsAndExpansion(progress: Float) {
-        expansionProgress = progress.coerceIn(0f, 1f)
-        val density = hostActivity.resources.displayMetrics.density
+        private var downX = 0f
+        private var downY = 0f
+        private var lastRawY = 0f
+        private var isDraggingSheet = false
+        private var ignoreGesture = false
+        private var startedInFullscreen = false
 
-        // Interpolate top corner radius smoothly (rounded in half-sheet -> square in fullscreen)
-        // 平滑插值顶部圆角（半屏圆角 -> 全屏直角）
-        val radius = config.theme.sheetCornerRadiusDp * density * (1f - expansionProgress)
-        sheetContainer.background = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            setColor(config.theme.backgroundColor)
-            cornerRadii = floatArrayOf(radius, radius, radius, radius, 0f, 0f, 0f, 0f)
+        private fun isPointInView(view: View, rawX: Float, rawY: Float): Boolean {
+            if (view.visibility != View.VISIBLE) return false
+            val loc = IntArray(2)
+            view.getLocationOnScreen(loc)
+            val rect = Rect(loc[0], loc[1], loc[0] + view.width, loc[1] + view.height)
+            return rect.contains(rawX.roundToInt(), rawY.roundToInt())
         }
 
-        // Drag handle height & alpha shrink smoothly when expanded to fullscreen
-        // 展开至全屏时平滑收缩拖拽条并让出状态栏安全区
-        val handleHeight = ((26 * density) * (1f - expansionProgress)).roundToInt()
-        val handleLp = dragHandleContainer.layoutParams as LinearLayout.LayoutParams
-        handleLp.height = handleHeight
-        dragHandleContainer.layoutParams = handleLp
-        dragHandleContainer.alpha = (1f - expansionProgress * 1.6f).coerceIn(0f, 1f)
-
-        // Floating top bar fades in smoothly as the sheet expands (hidden in half-sheet!)
-        // 顶部悬浮胶囊栏在半屏状态下隐藏，上拉展开过程中平滑渐显
-        val topBarAlpha = if (isPermissionDenied) {
-            1f
-        } else {
-            ((expansionProgress - 0.35f) / 0.65f).coerceIn(0f, 1f)
-        }
-        topBarContainer.alpha = topBarAlpha
-        topBarContainer.visibility = if (topBarAlpha > 0.02f) View.VISIBLE else View.INVISIBLE
-        topBarContainer.translationY = -(1f - topBarAlpha) * (16 * density)
-
-        val topBarTopPad = (statusBarHeightPx * expansionProgress).roundToInt() + dp(10)
-        topBarContainer.setPadding(dp(14), topBarTopPad, dp(14), dp(14))
-
-        // Adjust RecyclerView padding cleanly for both half-sheet and fullscreen
-        // 动态调整网格上下内边距（半屏紧贴顶部圆角，全屏预留悬浮栏空间）
-        val gridTopPad = ((statusBarHeightPx + dp(62)) * expansionProgress).roundToInt()
-        val gridBottomPad = navBarHeightPx + dp(88)
-        recyclerView.setPadding(0, gridTopPad, 0, gridBottomPad)
-
-        // Adjust bottom confirm bar padding for navigation bar inset
-        // 为底部确认栏适配系统底部导航栏安全区
-        bottomConfirmBar.setPadding(dp(16), dp(12), dp(16), dp(16) + navBarHeightPx)
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun buildDragHandleArea(density: Float): FrameLayout {
-        val container = FrameLayout(hostActivity).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                (26 * density).roundToInt()
-            )
-        }
-        val pill = View(hostActivity).apply {
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = 3 * density
-                setColor(config.theme.handleColor)
-            }
-            layoutParams = FrameLayout.LayoutParams(
-                (40 * density).roundToInt(),
-                (5 * density).roundToInt(),
-                Gravity.CENTER
-            )
-        }
-        container.addView(pill)
-
-        var downRawY = 0f
-        var startTranslationY = 0f
-        container.setOnTouchListener { _, event ->
-            when (event.actionMasked) {
+        override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+            if (isDismissing) return true
+            when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    sheetAnimator?.cancel()
-                    downRawY = event.rawY
-                    startTranslationY = sheetContainer.translationY
-                    true
+                    isDraggingSheet = false
+                    ignoreGesture = isPointInView(fastScrollThumb, ev.rawX, ev.rawY) ||
+                            isPointInView(bottomConfirmBar, ev.rawX, ev.rawY)
+                    if (!ignoreGesture) {
+                        // Catch sheet smoothly if grabbed mid-animation / 动画中途接手不跳变
+                        sheetAnimator?.cancel()
+                        downX = ev.rawX
+                        downY = ev.rawY
+                        lastRawY = ev.rawY
+                        startedInFullscreen = currentSheetOffsetY <= 2f
+                        velocityTracker?.recycle()
+                        velocityTracker = VelocityTracker.obtain().apply { addMovement(ev) }
+                    }
+                    return false
                 }
 
                 MotionEvent.ACTION_MOVE -> {
-                    val delta = event.rawY - downRawY
-                    val target = (startTranslationY + delta).coerceAtLeast(0f)
-                    sheetContainer.translationY = target
-                    val progress = 1f - (target / collapsedTopOffsetPx.coerceAtLeast(1)).coerceIn(0f, 1f)
-                    applyInsetsAndExpansion(progress)
-                    true
+                    if (ignoreGesture) return false
+                    velocityTracker?.addMovement(ev)
+                    val dx = ev.rawX - downX
+                    val dy = ev.rawY - downY
+                    if (abs(dy) > touchSlop && abs(dy) > abs(dx)) {
+                        val isHalfOrMid = currentSheetOffsetY > 2f
+                        val isGridAtTop = !recyclerView.canScrollVertically(-1)
+                        val isInTopArea = (downY - currentSheetOffsetY) < (statusBarHeightPx + dp(72))
+                        // Intercept in half-sheet for any vertical drag, or in fullscreen
+                        // when pulling downward at the top of the grid (or top bar area).
+                        // 半屏态拦截任意上下滑动；全屏态当列表已到顶或从顶栏下滑时无缝接管下拉。
+                        if (isHalfOrMid || (dy > 0f && (isGridAtTop || isInTopArea))) {
+                            activePopup?.dismiss()
+                            isDraggingSheet = true
+                            lastRawY = ev.rawY
+                            return true
+                        }
+                    }
+                    return false
                 }
 
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    val currentY = sheetContainer.translationY
-                    when {
-                        currentY < collapsedTopOffsetPx * 0.55f -> animateSheetState(expanded = true)
-                        currentY > collapsedTopOffsetPx + screenHeightPx * 0.16f -> dismissAnimated()
-                        else -> animateSheetState(expanded = false)
+                    velocityTracker?.recycle()
+                    velocityTracker = null
+                    isDraggingSheet = false
+                    return false
+                }
+            }
+            return super.onInterceptTouchEvent(ev)
+        }
+
+        @SuppressLint("ClickableViewAccessibility")
+        override fun onTouchEvent(ev: MotionEvent): Boolean {
+            if (isDismissing) return true
+            velocityTracker?.addMovement(ev)
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> return true
+
+                MotionEvent.ACTION_MOVE -> {
+                    val deltaY = ev.rawY - lastRawY
+                    lastRawY = ev.rawY
+                    if (!isDraggingSheet) {
+                        val dy = ev.rawY - downY
+                        if (abs(dy) > touchSlop) {
+                            isDraggingSheet = true
+                        } else {
+                            return true
+                        }
                     }
-                    true
+                    val nextOffset = (currentSheetOffsetY + deltaY).coerceAtLeast(0f)
+                    applySheetOffset(nextOffset)
+                    return true
                 }
 
-                else -> false
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (isDraggingSheet) {
+                        velocityTracker?.computeCurrentVelocity(1000)
+                        val velocityDpPerSec = (velocityTracker?.yVelocity ?: 0f) / density
+                        settleSheetAfterDrag(velocityDpPerSec)
+                    }
+                    velocityTracker?.recycle()
+                    velocityTracker = null
+                    isDraggingSheet = false
+                    return true
+                }
+            }
+            return super.onTouchEvent(ev)
+        }
+
+        private fun settleSheetAfterDrag(velocityDpPerSec: Float) {
+            val offset = currentSheetOffsetY
+            val half = collapsedTopOffsetPx
+            when {
+                // Fast upward fling -> expand smoothly to fullscreen / 快速上滑 -> 吸附全屏
+                velocityDpPerSec < -550f -> animateSheetToOffset(0f)
+
+                // Very fast downward fling -> dismiss directly / 极速下滑 -> 直接关闭
+                velocityDpPerSec > 1800f -> dismissAnimated()
+
+                // Moderate downward fling -> fullscreen snaps to half; half dismisses
+                // 中速下滑 -> 全屏态回到半屏，半屏态则关闭
+                velocityDpPerSec > 550f -> {
+                    if (startedInFullscreen && offset < half * 1.15f) {
+                        animateSheetToOffset(half)
+                    } else {
+                        dismissAnimated()
+                    }
+                }
+
+                // Slow release: snap to nearest anchor / 慢速松手按位置吸附最近锚点
+                offset < half * 0.5f -> animateSheetToOffset(0f)
+                offset <= half + screenHeightPx * 0.17f -> animateSheetToOffset(half)
+                else -> dismissAnimated()
             }
         }
-        return container
     }
 
-    private fun animateSheetState(expanded: Boolean) {
-        isExpanded = expanded
-        sheetAnimator?.cancel()
-        val startY = sheetContainer.translationY
-        val endY = if (expanded) 0f else collapsedTopOffsetPx.toFloat()
-        val startProgress = expansionProgress
-        val endProgress = if (expanded) 1f else 0f
-
-        sheetAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 260
-            interpolator = sheetInterpolator
-            addUpdateListener { anim ->
-                val f = anim.animatedValue as Float
-                sheetContainer.translationY = startY + (endY - startY) * f
-                applyInsetsAndExpansion(startProgress + (endProgress - startProgress) * f)
-            }
-            start()
-        }
-    }
+    private fun dp(value: Int): Int = (value * hostActivity.resources.displayMetrics.density).roundToInt()
 
     private fun buildLimitedAccessBanner(density: Float): LinearLayout {
         return LinearLayout(hostActivity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setBackgroundColor(config.theme.surfaceColor)
+            elevation = 4 * density
             setPadding((16 * density).roundToInt(), (10 * density).roundToInt(), (16 * density).roundToInt(), (10 * density).roundToInt())
-            layoutParams = LinearLayout.LayoutParams(
+            layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP
             )
 
             addView(TextView(hostActivity).apply {
@@ -551,7 +640,6 @@ class CustomMediaPickerDialog(
         val iconSize = (22 * density).roundToInt()
         val elevationPx = 5 * density
 
-        // Back / close circular vector icon button / 左侧圆形返回矢量图标按钮
         val backBtn = FrameLayout(hostActivity).apply {
             elevation = elevationPx
             background = makeFloatingSurfaceDrawable(density, isOval = true)
@@ -565,7 +653,6 @@ class CustomMediaPickerDialog(
         }
         bar.addView(backBtn)
 
-        // Center album dropdown pill with vector chevron / 居中相册切换胶囊（文本 + 矢量下拉箭头）
         val albumPill = LinearLayout(hostActivity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -607,7 +694,6 @@ class CustomMediaPickerDialog(
         })
         bar.addView(albumPill)
 
-        // Right overflow vector icon button / 右侧更多操作矢量图标按钮
         if (config.allowOpenInOtherApp) {
             val moreBtn = FrameLayout(hostActivity).apply {
                 elevation = elevationPx
@@ -871,13 +957,10 @@ class CustomMediaPickerDialog(
     private fun attachScrollListeners() {
         recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
-                if (!isExpanded && dy > 12) {
-                    animateSheetState(expanded = true)
-                }
                 val range = (rv.computeVerticalScrollRange() - rv.computeVerticalScrollExtent()).coerceAtLeast(1)
                 val offset = rv.computeVerticalScrollOffset()
                 val fraction = (offset.toFloat() / range.toFloat()).coerceIn(0f, 1f)
-                val showThumb = currentItems.size > config.crossAxisCount * 5
+                val showThumb = currentItems.size > config.crossAxisCount * 5 && currentSheetOffsetY <= 2f
                 fastScrollThumb.visibility = if (showThumb) View.VISIBLE else View.GONE
                 if (showThumb) {
                     updateFastScrollPosition(fraction, showBubble = rv.scrollState != RecyclerView.SCROLL_STATE_IDLE)
@@ -989,7 +1072,7 @@ class CustomMediaPickerDialog(
         emptyStateContainer.removeAllViews()
         emptyStateContainer.visibility = View.VISIBLE
         recyclerView.visibility = View.GONE
-        applyInsetsAndExpansion(expansionProgress)
+        applySheetOffset(currentSheetOffsetY)
 
         emptyStateContainer.addView(TextView(hostActivity).apply {
             text = config.strings.permissionDeniedMessage
