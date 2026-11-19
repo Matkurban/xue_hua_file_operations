@@ -2,11 +2,14 @@ import AVFoundation
 import Photos
 import UIKit
 
-/// Full-screen native media preview controller for iOS supporting horizontal
-/// paging, high-resolution image display, inline video playback, and live
-/// selection synchronization with the main picker grid.
-/// iOS 原生全屏媒体预览控制器，支持横向分页滑动、高清图片显示、视频内联播放
-/// 以及与主网格实时同步的勾选状态。
+/// Full-screen immersive native media preview controller for iOS.
+/// Features unified zoom/fade entrance & exit animations, pinch & double-tap zoom,
+/// tap-to-toggle chrome, soft gradient top/bottom bars, a horizontal selected-media
+/// thumbnail strip, inline video playback, and a sleek floating toast pill.
+///
+/// iOS 原生沉浸式全屏媒体预览控制器。
+/// 支持与 Android 一致的平滑缩放淡入/淡出动画、双指与双击缩放、轻触切换工具栏显隐、
+/// 柔和渐变顶/底栏、底部已选缩略图快速跳转条、视频内联播放及精致悬浮 Toast 提示。
 final class CustomMediaPreviewViewController: UIViewController,
     UICollectionViewDataSource,
     UICollectionViewDelegateFlowLayout
@@ -16,20 +19,35 @@ final class CustomMediaPreviewViewController: UIViewController,
     private let assets: PHFetchResult<PHAsset>
     private var currentIndex: Int
     private let selectedIdsProvider: () -> [String]
+    private let selectedAssetsProvider: () -> [PHAsset]
     private let onToggleSelection: (PHAsset) -> Bool
     private let onConfirmSelection: () -> Void
 
+    private let contentContainer = UIView()
     private var collectionView: UICollectionView!
-    private let topBar = UIView()
+    private let topChrome = GradientChromeView(topToBottom: true)
     private let backButton = UIButton(type: .system)
     private let counterLabel = UILabel()
-    private let selectBadgeButton = UIButton(type: .custom)
-    private let bottomBar = UIView()
+    private let selectBadgeHitButton = UIButton(type: .custom)
+    private let selectBadgeCircle = UIView()
+    private let selectBadgeNumber = UILabel()
+    private let selectBadgeCheck = UIImageView()
+
+    private let bottomChrome = GradientChromeView(topToBottom: false)
+    private var stripCollectionView: UICollectionView!
+    private var stripHeightConstraint: NSLayoutConstraint!
     private let confirmButton = UIButton(type: .system)
 
     private var activePlayer: AVPlayer?
     private var activePlayerLayer: AVPlayerLayer?
     private var hasScrolledToInitial = false
+    private var hasAnimatedEntrance = false
+    private var isChromeVisible = true
+    private var isDismissing = false
+
+    private let toastContainer = UIView()
+    private let toastLabel = UILabel()
+    private var toastHideWorkItem: DispatchWorkItem?
 
     init(
         config: CustomMediaPickerConfig,
@@ -37,6 +55,7 @@ final class CustomMediaPreviewViewController: UIViewController,
         assets: PHFetchResult<PHAsset>,
         initialIndex: Int,
         selectedIdsProvider: @escaping () -> [String],
+        selectedAssetsProvider: @escaping () -> [PHAsset],
         onToggleSelection: @escaping (PHAsset) -> Bool,
         onConfirmSelection: @escaping () -> Void
     ) {
@@ -45,10 +64,12 @@ final class CustomMediaPreviewViewController: UIViewController,
         self.assets = assets
         self.currentIndex = min(max(0, initialIndex), max(0, assets.count - 1))
         self.selectedIdsProvider = selectedIdsProvider
+        self.selectedAssetsProvider = selectedAssetsProvider
         self.onToggleSelection = onToggleSelection
         self.onConfirmSelection = onConfirmSelection
         super.init(nibName: nil, bundle: nil)
-        modalPresentationStyle = .fullScreen
+        modalPresentationStyle = .overFullScreen
+        modalTransitionStyle = .crossDissolve
     }
 
     required init?(coder: NSCoder) {
@@ -59,10 +80,23 @@ final class CustomMediaPreviewViewController: UIViewController,
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .black
+        view.backgroundColor = UIColor.black.withAlphaComponent(0)
+
+        contentContainer.alpha = 0
+        contentContainer.transform = CGAffineTransform(scaleX: 0.93, y: 0.93)
+        contentContainer.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(contentContainer)
+        NSLayoutConstraint.activate([
+            contentContainer.topAnchor.constraint(equalTo: view.topAnchor),
+            contentContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            contentContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            contentContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+
         setupCollectionView()
-        setupTopBar()
-        setupBottomBar()
+        setupTopChrome()
+        setupBottomChrome()
+        setupToastOverlay()
         refreshControls()
     }
 
@@ -72,6 +106,17 @@ final class CustomMediaPreviewViewController: UIViewController,
             hasScrolledToInitial = true
             let indexPath = IndexPath(item: currentIndex, section: 0)
             collectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: false)
+        }
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard !hasAnimatedEntrance else { return }
+        hasAnimatedEntrance = true
+        UIView.animate(withDuration: 0.24, delay: 0, options: [.curveEaseOut]) {
+            self.view.backgroundColor = .black
+            self.contentContainer.alpha = 1
+            self.contentContainer.transform = .identity
         }
     }
 
@@ -89,102 +134,242 @@ final class CustomMediaPreviewViewController: UIViewController,
         collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
         collectionView.isPagingEnabled = true
         collectionView.showsHorizontalScrollIndicator = false
-        collectionView.backgroundColor = .black
+        collectionView.backgroundColor = .clear
+        collectionView.contentInsetAdjustmentBehavior = .never
         collectionView.dataSource = self
         collectionView.delegate = self
         collectionView.register(PreviewAssetCell.self, forCellWithReuseIdentifier: PreviewAssetCell.reuseId)
         collectionView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(collectionView)
+        contentContainer.addSubview(collectionView)
 
         NSLayoutConstraint.activate([
-            collectionView.topAnchor.constraint(equalTo: view.topAnchor),
-            collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            collectionView.topAnchor.constraint(equalTo: contentContainer.topAnchor),
+            collectionView.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
+            collectionView.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
+            collectionView.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor),
         ])
     }
 
-    private func setupTopBar() {
-        topBar.backgroundColor = UIColor.black.withAlphaComponent(0.45)
-        topBar.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(topBar)
+    private func setupTopChrome() {
+        topChrome.translatesAutoresizingMaskIntoConstraints = false
+        contentContainer.addSubview(topChrome)
 
-        let backConfig = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
+        let backConfig = UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
         backButton.setImage(UIImage(systemName: "arrow.left", withConfiguration: backConfig), for: .normal)
         backButton.tintColor = .white
-        backButton.backgroundColor = UIColor.black.withAlphaComponent(0.35)
+        backButton.backgroundColor = UIColor.black.withAlphaComponent(0.32)
         backButton.layer.cornerRadius = 20
+        backButton.layer.borderWidth = 1.0 / UIScreen.main.scale
+        backButton.layer.borderColor = UIColor.white.withAlphaComponent(0.16).cgColor
         backButton.translatesAutoresizingMaskIntoConstraints = false
         backButton.addTarget(self, action: #selector(handleBack), for: .touchUpInside)
-        topBar.addSubview(backButton)
+        topChrome.addSubview(backButton)
 
-        counterLabel.font = .systemFont(ofSize: 16, weight: .semibold)
+        counterLabel.font = .monospacedDigitSystemFont(ofSize: 14, weight: .semibold)
         counterLabel.textColor = .white
         counterLabel.textAlignment = .center
+        counterLabel.backgroundColor = UIColor.black.withAlphaComponent(0.28)
+        counterLabel.layer.cornerRadius = 14
+        counterLabel.clipsToBounds = true
         counterLabel.translatesAutoresizingMaskIntoConstraints = false
-        topBar.addSubview(counterLabel)
+        topChrome.addSubview(counterLabel)
 
-        selectBadgeButton.titleLabel?.font = .systemFont(ofSize: 14, weight: .bold)
-        selectBadgeButton.layer.cornerRadius = 15
-        selectBadgeButton.translatesAutoresizingMaskIntoConstraints = false
-        selectBadgeButton.addTarget(self, action: #selector(handleToggleSelect), for: .touchUpInside)
-        topBar.addSubview(selectBadgeButton)
+        selectBadgeHitButton.translatesAutoresizingMaskIntoConstraints = false
+        selectBadgeHitButton.addTarget(self, action: #selector(handleToggleSelect), for: .touchUpInside)
+        topChrome.addSubview(selectBadgeHitButton)
+
+        selectBadgeCircle.layer.cornerRadius = 14
+        selectBadgeCircle.clipsToBounds = true
+        selectBadgeCircle.isUserInteractionEnabled = false
+        selectBadgeCircle.translatesAutoresizingMaskIntoConstraints = false
+        selectBadgeHitButton.addSubview(selectBadgeCircle)
+
+        selectBadgeNumber.font = .systemFont(ofSize: 13, weight: .bold)
+        selectBadgeNumber.textAlignment = .center
+        selectBadgeNumber.translatesAutoresizingMaskIntoConstraints = false
+        selectBadgeCircle.addSubview(selectBadgeNumber)
+
+        selectBadgeCheck.image = UIImage(
+            systemName: "checkmark",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .bold)
+        )
+        selectBadgeCheck.contentMode = .scaleAspectFit
+        selectBadgeCheck.isHidden = true
+        selectBadgeCheck.translatesAutoresizingMaskIntoConstraints = false
+        selectBadgeCircle.addSubview(selectBadgeCheck)
 
         NSLayoutConstraint.activate([
-            topBar.topAnchor.constraint(equalTo: view.topAnchor),
-            topBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            topBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            topChrome.topAnchor.constraint(equalTo: contentContainer.topAnchor),
+            topChrome.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
+            topChrome.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
 
-            backButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
-            backButton.leadingAnchor.constraint(equalTo: topBar.leadingAnchor, constant: 16),
+            backButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 6),
+            backButton.leadingAnchor.constraint(equalTo: topChrome.leadingAnchor, constant: 14),
             backButton.widthAnchor.constraint(equalToConstant: 40),
             backButton.heightAnchor.constraint(equalToConstant: 40),
-            backButton.bottomAnchor.constraint(equalTo: topBar.bottomAnchor, constant: -10),
+            backButton.bottomAnchor.constraint(equalTo: topChrome.bottomAnchor, constant: -18),
 
             counterLabel.centerYAnchor.constraint(equalTo: backButton.centerYAnchor),
-            counterLabel.centerXAnchor.constraint(equalTo: topBar.centerXAnchor),
+            counterLabel.centerXAnchor.constraint(equalTo: topChrome.centerXAnchor),
+            counterLabel.heightAnchor.constraint(equalToConstant: 28),
+            counterLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 64),
 
-            selectBadgeButton.centerYAnchor.constraint(equalTo: backButton.centerYAnchor),
-            selectBadgeButton.trailingAnchor.constraint(equalTo: topBar.trailingAnchor, constant: -16),
-            selectBadgeButton.widthAnchor.constraint(equalToConstant: 30),
-            selectBadgeButton.heightAnchor.constraint(equalToConstant: 30),
+            selectBadgeHitButton.centerYAnchor.constraint(equalTo: backButton.centerYAnchor),
+            selectBadgeHitButton.trailingAnchor.constraint(equalTo: topChrome.trailingAnchor, constant: -10),
+            selectBadgeHitButton.widthAnchor.constraint(equalToConstant: 44),
+            selectBadgeHitButton.heightAnchor.constraint(equalToConstant: 44),
+
+            selectBadgeCircle.centerXAnchor.constraint(equalTo: selectBadgeHitButton.centerXAnchor),
+            selectBadgeCircle.centerYAnchor.constraint(equalTo: selectBadgeHitButton.centerYAnchor),
+            selectBadgeCircle.widthAnchor.constraint(equalToConstant: 28),
+            selectBadgeCircle.heightAnchor.constraint(equalToConstant: 28),
+
+            selectBadgeNumber.centerXAnchor.constraint(equalTo: selectBadgeCircle.centerXAnchor),
+            selectBadgeNumber.centerYAnchor.constraint(equalTo: selectBadgeCircle.centerYAnchor),
+
+            selectBadgeCheck.centerXAnchor.constraint(equalTo: selectBadgeCircle.centerXAnchor),
+            selectBadgeCheck.centerYAnchor.constraint(equalTo: selectBadgeCircle.centerYAnchor),
+            selectBadgeCheck.widthAnchor.constraint(equalToConstant: 15),
+            selectBadgeCheck.heightAnchor.constraint(equalToConstant: 15),
         ])
     }
 
-    private func setupBottomBar() {
-        bottomBar.backgroundColor = UIColor.black.withAlphaComponent(0.45)
-        bottomBar.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(bottomBar)
+    private func setupBottomChrome() {
+        bottomChrome.translatesAutoresizingMaskIntoConstraints = false
+        contentContainer.addSubview(bottomChrome)
+
+        let stripLayout = UICollectionViewFlowLayout()
+        stripLayout.scrollDirection = .horizontal
+        stripLayout.minimumLineSpacing = 8
+        stripLayout.itemSize = CGSize(width: 50, height: 50)
+        stripLayout.sectionInset = UIEdgeInsets(top: 8, left: 16, bottom: 8, right: 16)
+
+        stripCollectionView = UICollectionView(frame: .zero, collectionViewLayout: stripLayout)
+        stripCollectionView.backgroundColor = .clear
+        stripCollectionView.showsHorizontalScrollIndicator = false
+        stripCollectionView.dataSource = self
+        stripCollectionView.delegate = self
+        stripCollectionView.register(SelectedStripCell.self, forCellWithReuseIdentifier: SelectedStripCell.reuseId)
+        stripCollectionView.translatesAutoresizingMaskIntoConstraints = false
+        bottomChrome.addSubview(stripCollectionView)
 
         confirmButton.backgroundColor = config.theme.primaryColor
         confirmButton.setTitleColor(config.theme.onPrimaryColor, for: .normal)
         confirmButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
-        confirmButton.layer.cornerRadius = 20
-        confirmButton.contentEdgeInsets = UIEdgeInsets(top: 10, left: 20, bottom: 10, right: 20)
+        confirmButton.layer.cornerRadius = 21
+        confirmButton.contentEdgeInsets = UIEdgeInsets(top: 10, left: 22, bottom: 10, right: 22)
         confirmButton.translatesAutoresizingMaskIntoConstraints = false
         confirmButton.addTarget(self, action: #selector(handleConfirm), for: .touchUpInside)
-        bottomBar.addSubview(confirmButton)
+        bottomChrome.addSubview(confirmButton)
+
+        stripHeightConstraint = stripCollectionView.heightAnchor.constraint(equalToConstant: 0)
 
         NSLayoutConstraint.activate([
-            bottomBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            bottomBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            bottomBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            bottomChrome.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
+            bottomChrome.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
+            bottomChrome.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor),
 
-            confirmButton.topAnchor.constraint(equalTo: bottomBar.topAnchor, constant: 12),
-            confirmButton.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor, constant: -16),
+            stripCollectionView.topAnchor.constraint(equalTo: bottomChrome.topAnchor, constant: 12),
+            stripCollectionView.leadingAnchor.constraint(equalTo: bottomChrome.leadingAnchor),
+            stripCollectionView.trailingAnchor.constraint(equalTo: bottomChrome.trailingAnchor),
+            stripHeightConstraint,
+
+            confirmButton.topAnchor.constraint(equalTo: stripCollectionView.bottomAnchor, constant: 8),
+            confirmButton.trailingAnchor.constraint(equalTo: bottomChrome.trailingAnchor, constant: -16),
             confirmButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
         ])
     }
 
+    private func setupToastOverlay() {
+        toastContainer.backgroundColor = UIColor(white: 0.14, alpha: 0.92)
+        toastContainer.layer.cornerRadius = 18
+        toastContainer.layer.borderWidth = 1.0 / UIScreen.main.scale
+        toastContainer.layer.borderColor = UIColor.white.withAlphaComponent(0.14).cgColor
+        toastContainer.alpha = 0
+        toastContainer.isHidden = true
+        toastContainer.isUserInteractionEnabled = false
+        toastContainer.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(toastContainer)
+
+        toastLabel.font = .systemFont(ofSize: 14, weight: .medium)
+        toastLabel.textColor = .white
+        toastLabel.textAlignment = .center
+        toastLabel.numberOfLines = 2
+        toastLabel.translatesAutoresizingMaskIntoConstraints = false
+        toastContainer.addSubview(toastLabel)
+
+        NSLayoutConstraint.activate([
+            toastContainer.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            toastContainer.bottomAnchor.constraint(equalTo: bottomChrome.topAnchor, constant: -12),
+            toastContainer.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 32),
+            toastContainer.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -32),
+
+            toastLabel.topAnchor.constraint(equalTo: toastContainer.topAnchor, constant: 9),
+            toastLabel.bottomAnchor.constraint(equalTo: toastContainer.bottomAnchor, constant: -9),
+            toastLabel.leadingAnchor.constraint(equalTo: toastContainer.leadingAnchor, constant: 16),
+            toastLabel.trailingAnchor.constraint(equalTo: toastContainer.trailingAnchor, constant: -16),
+        ])
+    }
+
+    private func showToast(_ message: String) {
+        toastHideWorkItem?.cancel()
+        toastLabel.text = message
+        toastContainer.isHidden = false
+        toastContainer.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
+        UIView.animate(withDuration: 0.18, delay: 0, options: [.curveEaseOut]) {
+            self.toastContainer.alpha = 1
+            self.toastContainer.transform = .identity
+        }
+        let item = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            UIView.animate(withDuration: 0.2, animations: {
+                self.toastContainer.alpha = 0
+            }, completion: { _ in
+                self.toastContainer.isHidden = true
+            })
+        }
+        toastHideWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6, execute: item)
+    }
+
+    private func dismissAnimated(completion: (() -> Void)? = nil) {
+        guard !isDismissing else { return }
+        isDismissing = true
+        stopActiveVideo()
+        UIView.animate(withDuration: 0.19, delay: 0, options: [.curveEaseIn], animations: {
+            self.view.backgroundColor = UIColor.black.withAlphaComponent(0)
+            self.contentContainer.alpha = 0
+            self.contentContainer.transform = CGAffineTransform(scaleX: 0.93, y: 0.93)
+        }, completion: { _ in
+            self.dismiss(animated: false, completion: completion)
+        })
+    }
+
+    private func toggleChrome() {
+        isChromeVisible.toggle()
+        let alpha: CGFloat = isChromeVisible ? 1 : 0
+        UIView.animate(withDuration: 0.18) {
+            self.topChrome.alpha = alpha
+            self.bottomChrome.alpha = alpha
+        }
+    }
+
     @objc private func handleBack() {
-        dismiss(animated: true)
+        dismissAnimated()
     }
 
     @objc private func handleToggleSelect() {
         guard currentIndex < assets.count else { return }
         let asset = assets.object(at: currentIndex)
         if onToggleSelection(asset) {
+            selectBadgeCircle.transform = CGAffineTransform(scaleX: 0.8, y: 0.8)
+            UIView.animate(withDuration: 0.18) {
+                self.selectBadgeCircle.transform = .identity
+            }
             refreshControls()
+        } else if let max = config.maxFiles {
+            let msg = config.strings.maxSelectionReached.replacingOccurrences(of: "{max}", with: "\(max)")
+            showToast(msg)
         }
     }
 
@@ -194,7 +379,7 @@ final class CustomMediaPreviewViewController: UIViewController,
             _ = onToggleSelection(assets.object(at: currentIndex))
         }
         if !selectedIdsProvider().isEmpty {
-            dismiss(animated: false) {
+            dismissAnimated {
                 self.onConfirmSelection()
             }
         }
@@ -208,49 +393,82 @@ final class CustomMediaPreviewViewController: UIViewController,
     }
 
     private func refreshControls() {
-        counterLabel.text = "\(currentIndex + 1) / \(assets.count)"
+        counterLabel.text = "  \(currentIndex + 1) / \(assets.count)  "
         let ids = selectedIdsProvider()
         let currentId = currentIndex < assets.count ? assets.object(at: currentIndex).localIdentifier : ""
-        if let idx = ids.firstIndex(of: currentId) {
-            selectBadgeButton.backgroundColor = config.theme.primaryColor
-            selectBadgeButton.layer.borderWidth = 0
+        let selIdx = ids.firstIndex(of: currentId)
+        let limitReached = config.multiple && config.maxFiles != nil && ids.count >= config.maxFiles! && selIdx == nil
+
+        if let idx = selIdx {
+            selectBadgeCircle.alpha = 1
+            selectBadgeCircle.backgroundColor = config.theme.primaryColor
+            selectBadgeCircle.layer.borderWidth = 0
             if config.multiple {
-                selectBadgeButton.setImage(nil, for: .normal)
-                selectBadgeButton.setTitleColor(config.theme.onPrimaryColor, for: .normal)
-                selectBadgeButton.setTitle("\(idx + 1)", for: .normal)
+                selectBadgeCheck.isHidden = true
+                selectBadgeNumber.isHidden = false
+                selectBadgeNumber.text = "\(idx + 1)"
+                selectBadgeNumber.textColor = config.theme.onPrimaryColor
             } else {
-                let checkIcon = UIImage(
-                    systemName: "checkmark",
-                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .bold)
-                )
-                selectBadgeButton.setTitle(nil, for: .normal)
-                selectBadgeButton.setImage(checkIcon, for: .normal)
-                selectBadgeButton.tintColor = config.theme.onPrimaryColor
+                selectBadgeNumber.isHidden = true
+                selectBadgeCheck.isHidden = false
+                selectBadgeCheck.tintColor = config.theme.onPrimaryColor
             }
         } else {
-            selectBadgeButton.backgroundColor = config.theme.unselectedBadgeFillColor
-            selectBadgeButton.layer.borderWidth = 2
-            selectBadgeButton.layer.borderColor = config.theme.unselectedBadgeBorderColor.cgColor
-            selectBadgeButton.setTitle(nil, for: .normal)
-            selectBadgeButton.setImage(nil, for: .normal)
+            selectBadgeNumber.isHidden = true
+            selectBadgeCheck.isHidden = true
+            selectBadgeCircle.alpha = limitReached ? 0.45 : 1.0
+            selectBadgeCircle.backgroundColor = config.theme.unselectedBadgeFillColor
+            selectBadgeCircle.layer.borderWidth = 2
+            selectBadgeCircle.layer.borderColor = config.theme.unselectedBadgeBorderColor.cgColor
         }
 
         let count = ids.count
         let title = count > 0 ? "\(config.strings.done) (\(count))" : config.strings.done
         confirmButton.setTitle(title, for: .normal)
-        confirmButton.alpha = (count > 0 || !config.multiple) ? 1.0 : 0.5
+        confirmButton.alpha = (count > 0 || !config.multiple) ? 1.0 : 0.45
+
+        let showStrip = config.multiple && count > 0
+        stripHeightConstraint.constant = showStrip ? 66 : 0
+        stripCollectionView.isHidden = !showStrip
+        if showStrip {
+            stripCollectionView.reloadData()
+        }
     }
 
     // MARK: - UICollectionViewDataSource & Delegate
 
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        assets.count
+        if collectionView === stripCollectionView {
+            return selectedAssetsProvider().count
+        }
+        return assets.count
     }
 
     func collectionView(
         _ collectionView: UICollectionView,
         cellForItemAt indexPath: IndexPath
     ) -> UICollectionViewCell {
+        if collectionView === stripCollectionView {
+            guard let cell = collectionView.dequeueReusableCell(
+                withReuseIdentifier: SelectedStripCell.reuseId,
+                for: indexPath
+            ) as? SelectedStripCell else {
+                return UICollectionViewCell()
+            }
+            let selectedAssets = selectedAssetsProvider()
+            guard indexPath.item < selectedAssets.count else { return cell }
+            let asset = selectedAssets[indexPath.item]
+            let isCurrent = currentIndex < assets.count
+                && assets.object(at: currentIndex).localIdentifier == asset.localIdentifier
+            cell.configure(
+                asset: asset,
+                repository: repository,
+                isCurrent: isCurrent,
+                accentColor: config.theme.primaryColor
+            )
+            return cell
+        }
+
         guard let cell = collectionView.dequeueReusableCell(
             withReuseIdentifier: PreviewAssetCell.reuseId,
             for: indexPath
@@ -258,11 +476,38 @@ final class CustomMediaPreviewViewController: UIViewController,
             return UICollectionViewCell()
         }
         let asset = assets.object(at: indexPath.item)
-        cell.configure(asset: asset, repository: repository) { [weak self, weak cell] in
-            guard let self = self, let cell = cell else { return }
-            self.playVideo(asset: asset, in: cell)
-        }
+        cell.configure(
+            asset: asset,
+            repository: repository,
+            onSingleTap: { [weak self] in self?.toggleChrome() },
+            onPlay: { [weak self, weak cell] in
+                guard let self = self, let cell = cell else { return }
+                self.playVideo(asset: asset, in: cell)
+            }
+        )
         return cell
+    }
+
+    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        guard collectionView === stripCollectionView else { return }
+        let selectedAssets = selectedAssetsProvider()
+        guard indexPath.item < selectedAssets.count else { return }
+        let targetId = selectedAssets[indexPath.item].localIdentifier
+        for i in 0..<assets.count {
+            if assets.object(at: i).localIdentifier == targetId {
+                if i != currentIndex {
+                    stopActiveVideo()
+                    currentIndex = i
+                    self.collectionView.scrollToItem(
+                        at: IndexPath(item: i, section: 0),
+                        at: .centeredHorizontally,
+                        animated: true
+                    )
+                    refreshControls()
+                }
+                break
+            }
+        }
     }
 
     func collectionView(
@@ -270,15 +515,18 @@ final class CustomMediaPreviewViewController: UIViewController,
         layout collectionViewLayout: UICollectionViewLayout,
         sizeForItemAt indexPath: IndexPath
     ) -> CGSize {
-        collectionView.bounds.size
+        if collectionView === stripCollectionView {
+            return CGSize(width: 50, height: 50)
+        }
+        return collectionView.bounds.size
     }
 
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-        updateCurrentIndexFromScroll()
+        if scrollView === collectionView { updateCurrentIndexFromScroll() }
     }
 
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-        if !decelerate { updateCurrentIndexFromScroll() }
+        if scrollView === collectionView, !decelerate { updateCurrentIndexFromScroll() }
     }
 
     private func updateCurrentIndexFromScroll() {
@@ -312,41 +560,155 @@ final class CustomMediaPreviewViewController: UIViewController,
     }
 }
 
-/// Full-screen preview cell showing a single image or video cover + play button.
-/// 全屏预览单元格：展示单张高清图或视频封面及播放按钮。
-private final class PreviewAssetCell: UICollectionViewCell {
+/// Soft vertical gradient overlay for top/bottom preview chrome.
+/// 预览页顶部/底部柔和渐变蒙层视图。
+private final class GradientChromeView: UIView {
+    private let gradientLayer = CAGradientLayer()
+
+    init(topToBottom: Bool) {
+        super.init(frame: .zero)
+        if topToBottom {
+            gradientLayer.colors = [
+                UIColor.black.withAlphaComponent(0.72).cgColor,
+                UIColor.black.withAlphaComponent(0.32).cgColor,
+                UIColor.clear.cgColor,
+            ]
+        } else {
+            gradientLayer.colors = [
+                UIColor.clear.cgColor,
+                UIColor.black.withAlphaComponent(0.45).cgColor,
+                UIColor.black.withAlphaComponent(0.82).cgColor,
+            ]
+        }
+        layer.insertSublayer(gradientLayer, at: 0)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        gradientLayer.frame = bounds
+    }
+}
+
+/// Horizontal thumbnail cell in the bottom selected-items strip.
+/// 底部已选缩略图快速跳转条单元格。
+private final class SelectedStripCell: UICollectionViewCell {
+    static let reuseId = "XueHuaSelectedStripCell"
+
+    private let imageView = UIImageView()
+    private var assetId = ""
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        contentView.layer.cornerRadius = 9
+        contentView.clipsToBounds = true
+
+        imageView.contentMode = .scaleAspectFill
+        imageView.layer.cornerRadius = 7
+        imageView.clipsToBounds = true
+        imageView.backgroundColor = UIColor.white.withAlphaComponent(0.12)
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(imageView)
+
+        NSLayoutConstraint.activate([
+            imageView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 2),
+            imageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 2),
+            imageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -2),
+            imageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -2),
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func configure(
+        asset: PHAsset,
+        repository: PhotoLibraryRepository,
+        isCurrent: Bool,
+        accentColor: UIColor
+    ) {
+        contentView.layer.borderWidth = isCurrent ? 2.2 : 0
+        contentView.layer.borderColor = isCurrent ? accentColor.cgColor : UIColor.clear.cgColor
+        guard assetId != asset.localIdentifier else { return }
+        assetId = asset.localIdentifier
+        imageView.image = nil
+        repository.requestThumbnail(for: asset, targetSize: CGSize(width: 120, height: 120)) { [weak self] img in
+            DispatchQueue.main.async {
+                if self?.assetId == asset.localIdentifier, let img = img {
+                    self?.imageView.image = img
+                }
+            }
+        }
+    }
+}
+
+/// Zoomable full-screen preview cell supporting pinch zoom, double-tap zoom,
+/// single-tap chrome toggle, and inline video playback trigger.
+/// 支持双指缩放、双击放大/还原、轻触切栏与视频播放的全屏预览单元格。
+private final class PreviewAssetCell: UICollectionViewCell, UIScrollViewDelegate {
     static let reuseId = "XueHuaPreviewAssetCell"
 
+    private let scrollView = UIScrollView()
     private let imageView = UIImageView()
     private let playButton = UIButton(type: .system)
     private var requestId: PHImageRequestID = PHInvalidImageRequestID
+    private var onSingleTap: (() -> Void)?
     private var onPlay: (() -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
+        scrollView.minimumZoomScale = 1.0
+        scrollView.maximumZoomScale = 3.5
+        scrollView.showsHorizontalScrollIndicator = false
+        scrollView.showsVerticalScrollIndicator = false
+        scrollView.delegate = self
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(scrollView)
+
         imageView.contentMode = .scaleAspectFit
         imageView.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(imageView)
+        scrollView.addSubview(imageView)
 
-        let iconConfig = UIImage.SymbolConfiguration(pointSize: 32, weight: .semibold)
+        let doubleTap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
+        doubleTap.numberOfTapsRequired = 2
+        scrollView.addGestureRecognizer(doubleTap)
+
+        let singleTap = UITapGestureRecognizer(target: self, action: #selector(handleSingleTap))
+        singleTap.require(toFail: doubleTap)
+        scrollView.addGestureRecognizer(singleTap)
+
+        let iconConfig = UIImage.SymbolConfiguration(pointSize: 30, weight: .semibold)
         playButton.setImage(UIImage(systemName: "play.fill", withConfiguration: iconConfig), for: .normal)
         playButton.tintColor = .white
-        playButton.backgroundColor = UIColor.black.withAlphaComponent(0.55)
-        playButton.layer.cornerRadius = 32
+        playButton.backgroundColor = UIColor.black.withAlphaComponent(0.48)
+        playButton.layer.cornerRadius = 33
+        playButton.layer.borderWidth = 1.5
+        playButton.layer.borderColor = UIColor.white.withAlphaComponent(0.35).cgColor
         playButton.translatesAutoresizingMaskIntoConstraints = false
         playButton.addTarget(self, action: #selector(handlePlay), for: .touchUpInside)
         contentView.addSubview(playButton)
 
         NSLayoutConstraint.activate([
-            imageView.topAnchor.constraint(equalTo: contentView.topAnchor),
-            imageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            imageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            imageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            scrollView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+
+            imageView.topAnchor.constraint(equalTo: scrollView.topAnchor),
+            imageView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
+            imageView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
+            imageView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
+            imageView.heightAnchor.constraint(equalTo: scrollView.heightAnchor),
 
             playButton.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
             playButton.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            playButton.widthAnchor.constraint(equalToConstant: 64),
-            playButton.heightAnchor.constraint(equalToConstant: 64),
+            playButton.widthAnchor.constraint(equalToConstant: 66),
+            playButton.heightAnchor.constraint(equalToConstant: 66),
         ])
     }
 
@@ -360,17 +722,26 @@ private final class PreviewAssetCell: UICollectionViewCell {
             PHImageManager.default().cancelImageRequest(requestId)
             requestId = PHInvalidImageRequestID
         }
+        scrollView.setZoomScale(1.0, animated: false)
         imageView.image = nil
         playButton.isHidden = true
+        onSingleTap = nil
         onPlay = nil
+    }
+
+    func viewForZooming(in scrollView: UIScrollView) -> UIView? {
+        imageView
     }
 
     func configure(
         asset: PHAsset,
         repository: PhotoLibraryRepository,
+        onSingleTap: @escaping () -> Void,
         onPlay: @escaping () -> Void
     ) {
+        self.onSingleTap = onSingleTap
         self.onPlay = onPlay
+        scrollView.setZoomScale(1.0, animated: false)
         playButton.isHidden = asset.mediaType != .video
         let scale = UIScreen.main.scale
         let targetSize = CGSize(
@@ -396,6 +767,29 @@ private final class PreviewAssetCell: UICollectionViewCell {
 
     func setPlayButtonHidden(_ hidden: Bool) {
         playButton.isHidden = hidden
+    }
+
+    @objc private func handleSingleTap() {
+        onSingleTap?()
+    }
+
+    @objc private func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
+        if scrollView.zoomScale > 1.05 {
+            scrollView.setZoomScale(1.0, animated: true)
+        } else {
+            let point = gesture.location(in: imageView)
+            let zoomRectSize = CGSize(
+                width: scrollView.bounds.width / 2.4,
+                height: scrollView.bounds.height / 2.4
+            )
+            let zoomRect = CGRect(
+                x: point.x - zoomRectSize.width / 2,
+                y: point.y - zoomRectSize.height / 2,
+                width: zoomRectSize.width,
+                height: zoomRectSize.height
+            )
+            scrollView.zoom(to: zoomRect, animated: true)
+        }
     }
 
     @objc private func handlePlay() {

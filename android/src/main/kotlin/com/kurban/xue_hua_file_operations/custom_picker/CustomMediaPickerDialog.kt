@@ -108,6 +108,7 @@ class CustomMediaPickerDialog(
     private lateinit var dateBubbleView: TextView
     private var activeCameraTile: CameraPreviewTileView? = null
     private var activePopup: PopupWindow? = null
+    private var activeToast: Toast? = null
     private var sheetAnimator: ValueAnimator? = null
 
     private val gridAdapter = MediaGridAdapter()
@@ -253,6 +254,7 @@ class CustomMediaPickerDialog(
         setOnDismissListener {
             sheetAnimator?.cancel()
             activePopup?.dismiss()
+            activeToast?.cancel()
             activeCameraTile?.stopPreview()
             repository.release()
             if (!deliveredResult) {
@@ -1166,7 +1168,8 @@ class CustomMediaPickerDialog(
         val limit = config.maxFiles
         if (limit != null && selectedItems.size >= limit) {
             val msg = config.strings.maxSelectionReached.replace("{max}", limit.toString())
-            Toast.makeText(hostActivity, msg, Toast.LENGTH_SHORT).show()
+            activeToast?.cancel()
+            activeToast = Toast.makeText(hostActivity, msg, Toast.LENGTH_SHORT).also { it.show() }
             return false
         }
         selectedItems.add(item)
@@ -1362,6 +1365,14 @@ class CustomMediaPickerDialog(
         fun refreshBadgeOnly() {
             val item = boundItem ?: return
             val selIdx = selectedItems.indexOfFirst { it.id == item.id }
+            val isLimitDisabled = config.multiple && config.maxFiles != null &&
+                selectedItems.size >= config.maxFiles && selIdx < 0
+
+            // Visually dim unselected tiles when maxFiles is reached (zero flicker).
+            // 达到最大选择数量时，对未选中项叠加柔和禁用态透明效果（就地更新零闪烁）。
+            imageView.alpha = if (isLimitDisabled) 0.38f else 1f
+            badgeCircle.alpha = if (isLimitDisabled) 0.45f else 1f
+
             if (selIdx >= 0) {
                 badgeCircle.background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL

@@ -60,6 +60,10 @@ final class CustomMediaPickerViewController: UIViewController,
     private let bottomBar = UIView()
     private let confirmButton = UIButton(type: .system)
 
+    private let toastContainer = UIView()
+    private let toastLabel = UILabel()
+    private var toastHideWorkItem: DispatchWorkItem?
+
     private let emptyStateStack = UIStackView()
     private let emptyMessageLabel = UILabel()
     private let settingsButton = UIButton(type: .system)
@@ -105,6 +109,7 @@ final class CustomMediaPickerViewController: UIViewController,
         setupFloatingTopBar()
         setupFastScroller()
         setupBottomBar()
+        setupToastOverlay()
         setupEmptyOrDeniedState()
         setupUnifiedSheetPanGesture()
 
@@ -505,6 +510,64 @@ final class CustomMediaPickerViewController: UIViewController,
             confirmButton.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor, constant: -16),
             confirmButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
         ])
+    }
+
+    /// Builds a sleek, compact floating dark-glass toast pill above the bottom bar.
+    /// 构建悬浮于底部栏上方的精致紧凑深色毛玻璃胶囊 Toast 提示。
+    private func setupToastOverlay() {
+        toastContainer.backgroundColor = UIColor(white: 0.14, alpha: 0.92)
+        toastContainer.layer.cornerRadius = 18
+        toastContainer.layer.borderWidth = 1.0 / UIScreen.main.scale
+        toastContainer.layer.borderColor = UIColor.white.withAlphaComponent(0.14).cgColor
+        toastContainer.layer.shadowColor = UIColor.black.cgColor
+        toastContainer.layer.shadowOpacity = 0.22
+        toastContainer.layer.shadowRadius = 10
+        toastContainer.layer.shadowOffset = CGSize(width: 0, height: 4)
+        toastContainer.alpha = 0
+        toastContainer.isHidden = true
+        toastContainer.isUserInteractionEnabled = false
+        toastContainer.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(toastContainer)
+
+        toastLabel.font = .systemFont(ofSize: 14, weight: .medium)
+        toastLabel.textColor = .white
+        toastLabel.textAlignment = .center
+        toastLabel.numberOfLines = 2
+        toastLabel.translatesAutoresizingMaskIntoConstraints = false
+        toastContainer.addSubview(toastLabel)
+
+        NSLayoutConstraint.activate([
+            toastContainer.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            toastContainer.bottomAnchor.constraint(equalTo: bottomBar.topAnchor, constant: -14),
+            toastContainer.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 32),
+            toastContainer.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -32),
+
+            toastLabel.topAnchor.constraint(equalTo: toastContainer.topAnchor, constant: 9),
+            toastLabel.bottomAnchor.constraint(equalTo: toastContainer.bottomAnchor, constant: -9),
+            toastLabel.leadingAnchor.constraint(equalTo: toastContainer.leadingAnchor, constant: 16),
+            toastLabel.trailingAnchor.constraint(equalTo: toastContainer.trailingAnchor, constant: -16),
+        ])
+    }
+
+    private func showToast(_ message: String) {
+        toastHideWorkItem?.cancel()
+        toastLabel.text = message
+        toastContainer.isHidden = false
+        toastContainer.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
+        UIView.animate(withDuration: 0.18, delay: 0, options: [.curveEaseOut]) {
+            self.toastContainer.alpha = 1
+            self.toastContainer.transform = .identity
+        }
+        let item = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            UIView.animate(withDuration: 0.2, animations: {
+                self.toastContainer.alpha = 0
+            }, completion: { _ in
+                self.toastContainer.isHidden = true
+            })
+        }
+        toastHideWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6, execute: item)
     }
 
     private func setupEmptyOrDeniedState() {
@@ -1038,11 +1101,7 @@ final class CustomMediaPickerViewController: UIViewController,
         }
         if let max = config.maxFiles, selectedAssetIds.count >= max {
             let msg = config.strings.maxSelectionReached.replacingOccurrences(of: "{max}", with: "\(max)")
-            let alert = UIAlertController(title: nil, message: msg, preferredStyle: .alert)
-            present(alert, animated: true)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                alert.dismiss(animated: true)
-            }
+            showToast(msg)
             return false
         }
         selectedAssetIds.append(id)
@@ -1051,11 +1110,12 @@ final class CustomMediaPickerViewController: UIViewController,
         return true
     }
 
-    /// Updates ONLY the selection badges of currently visible cells in place
-    /// without calling `reloadData()`, eliminating all thumbnail flicker.
-    /// 仅就地刷新当前可见单元格的选中角标，不调用 `reloadData()`，彻底杜绝缩略图闪烁。
+    /// Updates ONLY the selection badges and disabled state of currently visible
+    /// cells in place without calling `reloadData()`, eliminating all flicker.
+    /// 仅就地刷新当前可见单元格的选中角标与上限禁用态，不调用 `reloadData()`，彻底杜绝闪烁。
     private func updateVisibleSelectionBadges() {
         guard let album = currentAlbum else { return }
+        let limitReached = config.multiple && config.maxFiles != nil && selectedAssetIds.count >= config.maxFiles!
         for cell in collectionView.visibleCells {
             guard let thumbCell = cell as? MediaThumbnailCell,
                   let indexPath = collectionView.indexPath(for: thumbCell),
@@ -1067,7 +1127,8 @@ final class CustomMediaPickerViewController: UIViewController,
             thumbCell.updateBadge(
                 theme: config.theme,
                 multiple: config.multiple,
-                selectionIndex: selIdx
+                selectionIndex: selIdx,
+                isDisabled: limitReached && selIdx == nil
             )
         }
     }
@@ -1146,12 +1207,15 @@ final class CustomMediaPickerViewController: UIViewController,
 
         let asset = album.fetchResult.object(at: idx)
         let selectionIndex = selectedAssetIds.firstIndex(of: asset.localIdentifier)
+        let isLimitDisabled = config.multiple && config.maxFiles != nil &&
+            selectedAssetIds.count >= config.maxFiles! && selectionIndex == nil
         cell.configure(
             asset: asset,
             repository: repository,
             theme: config.theme,
             multiple: config.multiple,
-            selectionIndex: selectionIndex
+            selectionIndex: selectionIndex,
+            isDisabled: isLimitDisabled
         ) { [weak self] in
             guard let self = self else { return }
             if !self.config.multiple {
@@ -1182,6 +1246,10 @@ final class CustomMediaPickerViewController: UIViewController,
                 assets: album.fetchResult,
                 initialIndex: idx,
                 selectedIdsProvider: { [weak self] in self?.selectedAssetIds ?? [] },
+                selectedAssetsProvider: { [weak self] in
+                    guard let self = self else { return [] }
+                    return self.selectedAssetIds.compactMap { self.selectedAssetsById[$0] }
+                },
                 onToggleSelection: { [weak self] target in
                     self?.toggleSelection(for: target) ?? false
                 },
@@ -1189,7 +1257,9 @@ final class CustomMediaPickerViewController: UIViewController,
                     self?.handleConfirmSelection()
                 }
             )
-            present(preview, animated: true)
+            // Present without system transition so the unified zoom/fade entrance runs cleanly.
+            // 关闭系统默认转场动画，由预览控制器执行与 Android 一致的平滑缩放淡入动画。
+            present(preview, animated: false)
         } else if !config.multiple {
             _ = toggleSelection(for: asset)
             handleConfirmSelection()
@@ -1376,6 +1446,7 @@ private final class MediaThumbnailCell: UICollectionViewCell {
         theme: CustomMediaPickerTheme,
         multiple: Bool,
         selectionIndex: Int?,
+        isDisabled: Bool,
         onBadgeTap: @escaping () -> Void
     ) {
         self.assetId = asset.localIdentifier
@@ -1398,12 +1469,15 @@ private final class MediaThumbnailCell: UICollectionViewCell {
             durationLabel.isHidden = true
         }
 
-        updateBadge(theme: theme, multiple: multiple, selectionIndex: selectionIndex)
+        updateBadge(theme: theme, multiple: multiple, selectionIndex: selectionIndex, isDisabled: isDisabled)
     }
 
-    /// Updates only the circular selection badge without touching the thumbnail image.
-    /// 仅更新右上角选择角标，不触碰已加载的缩略图，避免闪烁。
-    func updateBadge(theme: CustomMediaPickerTheme, multiple: Bool, selectionIndex: Int?) {
+    /// Updates only the circular selection badge and disabled visual state without
+    /// touching the loaded thumbnail image, preventing flicker.
+    /// 仅更新右上角选择角标与上限禁用态，不触碰已加载的缩略图，避免闪烁。
+    func updateBadge(theme: CustomMediaPickerTheme, multiple: Bool, selectionIndex: Int?, isDisabled: Bool) {
+        imageView.alpha = isDisabled ? 0.38 : 1.0
+        badgeCircle.alpha = isDisabled ? 0.45 : 1.0
         if let selIdx = selectionIndex {
             badgeCircle.backgroundColor = theme.primaryColor
             badgeCircle.layer.borderWidth = 0
