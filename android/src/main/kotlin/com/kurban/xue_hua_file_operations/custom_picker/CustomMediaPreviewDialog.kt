@@ -1,10 +1,10 @@
 package com.kurban.xue_hua_file_operations.custom_picker
 
+import android.annotation.SuppressLint
 import android.app.Dialog
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
@@ -21,6 +21,7 @@ import android.widget.VideoView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.PagerSnapHelper
 import androidx.recyclerview.widget.RecyclerView
+import androidx.core.graphics.drawable.toDrawable
 
 /**
  * Full-screen native media preview dialog supporting horizontal swiping,
@@ -32,7 +33,7 @@ class CustomMediaPreviewDialog(
     private val config: CustomMediaPickerConfig,
     private val repository: MediaStoreRepository,
     private val items: List<MediaItem>,
-    private val initialIndex: Int,
+    initialIndex: Int,
     private val selectedItems: MutableList<MediaItem>,
     private val onToggleSelection: (MediaItem) -> Boolean,
     private val onConfirmSelection: () -> Unit,
@@ -51,7 +52,7 @@ class CustomMediaPreviewDialog(
         super.onCreate(savedInstanceState)
         requestWindowFeature(Window.FEATURE_NO_TITLE)
         window?.apply {
-            setBackgroundDrawable(ColorDrawable(Color.BLACK))
+            setBackgroundDrawable(Color.BLACK.toDrawable())
             setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         }
 
@@ -199,6 +200,7 @@ class CustomMediaPreviewDialog(
         activeVideoView = null
     }
 
+    @SuppressLint("SetTextI18n")
     private fun refreshControls() {
         counterView.text = "${currentIndex + 1} / ${items.size}"
         val currentItem = items.getOrNull(currentIndex)
@@ -226,7 +228,8 @@ class CustomMediaPreviewDialog(
         }
 
         val count = selectedItems.size
-        confirmButton.text = if (count > 0) "${config.strings.done} ($count)" else config.strings.done
+        confirmButton.text =
+            if (count > 0) "${config.strings.done} ($count)" else config.strings.done
         confirmButton.alpha = if (count > 0 || !config.multiple) 1f else 0.5f
     }
 

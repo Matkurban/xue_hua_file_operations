@@ -144,7 +144,12 @@ class XueHuaFileOperationsPlugin :
     }
 
     /** Returns true when a hook handled the call (result already answered). */
-    private fun tryPickHook(multiple: Boolean, withData: Boolean, maxFiles: Int?, result: Result): Boolean {
+    private fun tryPickHook(
+        multiple: Boolean,
+        withData: Boolean,
+        maxFiles: Int?,
+        result: Result
+    ): Boolean {
         var hook = if (multiple) testHook(TEST_PICK_FILES) else testHook(TEST_PICK_FILE)
         if (multiple && hook == null) hook = testHook(TEST_PICK_FILE)
         if (hook == null) return false
@@ -249,6 +254,7 @@ class XueHuaFileOperationsPlugin :
             !path.isNullOrEmpty() -> path
             !identifier.isNullOrEmpty() && identifier.startsWith("file://") ->
                 identifier.removePrefix("file://")
+
             !identifier.isNullOrEmpty() && !identifier.contains("://") -> identifier
             else -> null
         }
@@ -382,10 +388,12 @@ class XueHuaFileOperationsPlugin :
                         Manifest.permission.READ_MEDIA_IMAGES,
                         Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
                     )
+
                     "video" -> arrayOf(
                         Manifest.permission.READ_MEDIA_VIDEO,
                         Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
                     )
+
                     else -> arrayOf(
                         Manifest.permission.READ_MEDIA_IMAGES,
                         Manifest.permission.READ_MEDIA_VIDEO,
@@ -393,6 +401,7 @@ class XueHuaFileOperationsPlugin :
                     )
                 }
             }
+
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
                 when (mediaType) {
                     "image" -> arrayOf(Manifest.permission.READ_MEDIA_IMAGES)
@@ -403,6 +412,7 @@ class XueHuaFileOperationsPlugin :
                     )
                 }
             }
+
             else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
     }
@@ -431,6 +441,7 @@ class XueHuaFileOperationsPlugin :
                 }
                 MediaReadAccess.DENIED
             }
+
             else -> {
                 if (granted(Manifest.permission.READ_EXTERNAL_STORAGE)) MediaReadAccess.FULL
                 else MediaReadAccess.DENIED
@@ -604,7 +615,13 @@ class XueHuaFileOperationsPlugin :
     private fun pickFiles(call: MethodCall, result: Result) {
         val withData = call.argument<Boolean>("withData") ?: false
         val maxFiles = call.argument<Int>("maxFiles")
-        if (tryPickHook(multiple = true, withData = withData, maxFiles = maxFiles, result = result)) {
+        if (tryPickHook(
+                multiple = true,
+                withData = withData,
+                maxFiles = maxFiles,
+                result = result
+            )
+        ) {
             return
         }
         val act = ensureActivity(result) ?: return
@@ -1117,11 +1134,17 @@ class XueHuaFileOperationsPlugin :
             if (request.isVideo) MediaStore.ACTION_VIDEO_CAPTURE else MediaStore.ACTION_IMAGE_CAPTURE
         )
         if (request.preferredCamera == "front") {
-            intent.putExtra("android.intent.extras.CAMERA_FACING", CameraCharacteristics.LENS_FACING_FRONT)
+            intent.putExtra(
+                "android.intent.extras.CAMERA_FACING",
+                CameraCharacteristics.LENS_FACING_FRONT
+            )
             intent.putExtra("android.intent.extras.LENS_FACING_FRONT", 1)
             intent.putExtra("android.intent.extra.USE_FRONT_CAMERA", true)
         } else {
-            intent.putExtra("android.intent.extras.CAMERA_FACING", CameraCharacteristics.LENS_FACING_BACK)
+            intent.putExtra(
+                "android.intent.extras.CAMERA_FACING",
+                CameraCharacteristics.LENS_FACING_BACK
+            )
         }
         request.maxDurationSeconds?.let {
             if (request.isVideo) intent.putExtra(MediaStore.EXTRA_DURATION_LIMIT, it)
@@ -1256,9 +1279,15 @@ class XueHuaFileOperationsPlugin :
             putString(KEY_CAPTURE_PATH, request.file.absolutePath)
             putBoolean(KEY_CAPTURE_IS_VIDEO, request.isVideo)
             putBoolean(KEY_CAPTURE_FINISHED, false)
-            if (request.maxWidth != null) putString(KEY_CAPTURE_MAX_WIDTH, request.maxWidth.toString())
+            if (request.maxWidth != null) putString(
+                KEY_CAPTURE_MAX_WIDTH,
+                request.maxWidth.toString()
+            )
             else remove(KEY_CAPTURE_MAX_WIDTH)
-            if (request.maxHeight != null) putString(KEY_CAPTURE_MAX_HEIGHT, request.maxHeight.toString())
+            if (request.maxHeight != null) putString(
+                KEY_CAPTURE_MAX_HEIGHT,
+                request.maxHeight.toString()
+            )
             else remove(KEY_CAPTURE_MAX_HEIGHT)
             if (request.imageQuality != null) putInt(KEY_CAPTURE_QUALITY, request.imageQuality)
             else remove(KEY_CAPTURE_QUALITY)
@@ -1300,7 +1329,10 @@ class XueHuaFileOperationsPlugin :
         val isVideo = prefs.getBoolean(KEY_CAPTURE_IS_VIDEO, false)
         val maxWidth = prefs.getString(KEY_CAPTURE_MAX_WIDTH, null)?.toDoubleOrNull()
         val maxHeight = prefs.getString(KEY_CAPTURE_MAX_HEIGHT, null)?.toDoubleOrNull()
-        val quality = if (prefs.contains(KEY_CAPTURE_QUALITY)) prefs.getInt(KEY_CAPTURE_QUALITY, 100) else null
+        val quality = if (prefs.contains(KEY_CAPTURE_QUALITY)) prefs.getInt(
+            KEY_CAPTURE_QUALITY,
+            100
+        ) else null
         clearCaptureState()
         thread {
             try {

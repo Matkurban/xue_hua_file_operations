@@ -61,14 +61,34 @@ data class CustomMediaPickerTheme(
                 primaryColor = color("primaryColor", 0xFF2AABEE.toInt(), 0xFF2AABEE.toInt()),
                 onPrimaryColor = color("onPrimaryColor", Color.WHITE, Color.WHITE),
                 textColor = color("textColor", 0xFF111111.toInt(), 0xFFF5F5F7.toInt()),
-                secondaryTextColor = color("secondaryTextColor", 0xFF7A8089.toInt(), 0xFF98989F.toInt()),
+                secondaryTextColor = color(
+                    "secondaryTextColor",
+                    0xFF7A8089.toInt(),
+                    0xFF98989F.toInt()
+                ),
                 iconColor = color("iconColor", 0xFF1A1A1A.toInt(), 0xFFF5F5F7.toInt()),
-                unselectedBadgeBorderColor = color("unselectedBadgeBorderColor", Color.WHITE, Color.WHITE),
-                unselectedBadgeFillColor = color("unselectedBadgeFillColor", 0x40000000, 0x40000000),
+                unselectedBadgeBorderColor = color(
+                    "unselectedBadgeBorderColor",
+                    Color.WHITE,
+                    Color.WHITE
+                ),
+                unselectedBadgeFillColor = color(
+                    "unselectedBadgeFillColor",
+                    0x40000000,
+                    0x40000000
+                ),
                 scrimColor = color("scrimColor", 0x66000000, 0x80000000.toInt()),
                 handleColor = color("handleColor", 0x408E8E93, 0x55AEAEB2),
-                dateBubbleBackgroundColor = color("dateBubbleBackgroundColor", 0xF2FFFFFF.toInt(), 0xF22C2C2E.toInt()),
-                dateBubbleTextColor = color("dateBubbleTextColor", 0xFF111111.toInt(), 0xFFF5F5F7.toInt()),
+                dateBubbleBackgroundColor = color(
+                    "dateBubbleBackgroundColor",
+                    0xF2FFFFFF.toInt(),
+                    0xF22C2C2E.toInt()
+                ),
+                dateBubbleTextColor = color(
+                    "dateBubbleTextColor",
+                    0xFF111111.toInt(),
+                    0xFFF5F5F7.toInt()
+                ),
                 sheetCornerRadiusDp = dp("sheetCornerRadius", 20f).coerceAtLeast(0f),
                 gridSpacingDp = dp("gridSpacing", 2f).coerceAtLeast(0f),
             )

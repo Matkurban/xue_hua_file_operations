@@ -8,6 +8,7 @@ import java.io.File
 import java.io.FileOutputStream
 import kotlin.math.min
 import kotlin.math.roundToInt
+import androidx.core.graphics.scale
 
 /**
  * Downscales / recompresses a captured photo so it honours `maxWidth`,
@@ -45,8 +46,7 @@ internal class CaptureImageResizer(private val context: Context) {
             )
         }
         val decoded = BitmapFactory.decodeFile(imagePath, options) ?: return imagePath
-        val scaled = Bitmap.createScaledBitmap(
-            decoded,
+        val scaled = decoded.scale(
             targetWidth.toInt().coerceAtLeast(1),
             targetHeight.toInt().coerceAtLeast(1),
             false,

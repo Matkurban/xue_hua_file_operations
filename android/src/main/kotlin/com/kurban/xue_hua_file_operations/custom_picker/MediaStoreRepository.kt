@@ -125,53 +125,60 @@ class MediaStoreRepository(private val context: Context) {
                     "${MediaStore.Files.FileColumns.MEDIA_TYPE} = ${MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO})"
         }
 
-        val sortOrder = "${MediaStore.Files.FileColumns.DATE_ADDED} DESC, ${MediaStore.Files.FileColumns._ID} DESC"
+        val sortOrder =
+            "${MediaStore.Files.FileColumns.DATE_ADDED} DESC, ${MediaStore.Files.FileColumns._ID} DESC"
         val items = ArrayList<MediaItem>()
 
-        context.contentResolver.query(collection, projection, selection, null, sortOrder)?.use { cursor ->
-            val idCol = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
-            val typeCol = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MEDIA_TYPE)
-            val nameCol = cursor.getColumnIndex(MediaStore.Files.FileColumns.DISPLAY_NAME)
-            val mimeCol = cursor.getColumnIndex(MediaStore.Files.FileColumns.MIME_TYPE)
-            val dateCol = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATE_ADDED)
-            val sizeCol = cursor.getColumnIndex(MediaStore.Files.FileColumns.SIZE)
-            val durationCol = cursor.getColumnIndex(MediaStore.MediaColumns.DURATION)
-            val bucketIdCol = cursor.getColumnIndex(MediaStore.Images.Media.BUCKET_ID)
-            val bucketNameCol = cursor.getColumnIndex(MediaStore.Images.Media.BUCKET_DISPLAY_NAME)
+        context.contentResolver.query(collection, projection, selection, null, sortOrder)
+            ?.use { cursor ->
+                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
+                val typeCol = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MEDIA_TYPE)
+                val nameCol = cursor.getColumnIndex(MediaStore.Files.FileColumns.DISPLAY_NAME)
+                val mimeCol = cursor.getColumnIndex(MediaStore.Files.FileColumns.MIME_TYPE)
+                val dateCol = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATE_ADDED)
+                val sizeCol = cursor.getColumnIndex(MediaStore.Files.FileColumns.SIZE)
+                val durationCol = cursor.getColumnIndex(MediaStore.MediaColumns.DURATION)
+                val bucketIdCol = cursor.getColumnIndex(MediaStore.Images.Media.BUCKET_ID)
+                val bucketNameCol =
+                    cursor.getColumnIndex(MediaStore.Images.Media.BUCKET_DISPLAY_NAME)
 
-            while (cursor.moveToNext()) {
-                val id = cursor.getLong(idCol)
-                val type = cursor.getInt(typeCol)
-                val isVideo = type == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO
-                val contentUri = ContentUris.withAppendedId(
-                    if (isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-                    else MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                    id
-                )
-                val name = if (nameCol >= 0) cursor.getString(nameCol) ?: "media_$id" else "media_$id"
-                val mime = if (mimeCol >= 0) cursor.getString(mimeCol) ?: "" else ""
-                val dateAdded = if (dateCol >= 0) cursor.getLong(dateCol) else 0L
-                val size = if (sizeCol >= 0) cursor.getLong(sizeCol) else 0L
-                val duration = if (isVideo && durationCol >= 0) cursor.getLong(durationCol) else 0L
-                val bucketId = if (bucketIdCol >= 0) cursor.getString(bucketIdCol) ?: "other" else "other"
-                val bucketName = if (bucketNameCol >= 0) cursor.getString(bucketNameCol) ?: "Other" else "Other"
-
-                items.add(
-                    MediaItem(
-                        id = id,
-                        uri = contentUri,
-                        displayName = name,
-                        mimeType = mime,
-                        isVideo = isVideo,
-                        durationMs = duration,
-                        dateAddedSec = dateAdded,
-                        bucketId = bucketId,
-                        bucketName = bucketName,
-                        size = size,
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idCol)
+                    val type = cursor.getInt(typeCol)
+                    val isVideo = type == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO
+                    val contentUri = ContentUris.withAppendedId(
+                        if (isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                        else MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                        id
                     )
-                )
+                    val name =
+                        if (nameCol >= 0) cursor.getString(nameCol) ?: "media_$id" else "media_$id"
+                    val mime = if (mimeCol >= 0) cursor.getString(mimeCol) ?: "" else ""
+                    val dateAdded = if (dateCol >= 0) cursor.getLong(dateCol) else 0L
+                    val size = if (sizeCol >= 0) cursor.getLong(sizeCol) else 0L
+                    val duration =
+                        if (isVideo && durationCol >= 0) cursor.getLong(durationCol) else 0L
+                    val bucketId =
+                        if (bucketIdCol >= 0) cursor.getString(bucketIdCol) ?: "other" else "other"
+                    val bucketName = if (bucketNameCol >= 0) cursor.getString(bucketNameCol)
+                        ?: "Other" else "Other"
+
+                    items.add(
+                        MediaItem(
+                            id = id,
+                            uri = contentUri,
+                            displayName = name,
+                            mimeType = mime,
+                            isVideo = isVideo,
+                            durationMs = duration,
+                            dateAddedSec = dateAdded,
+                            bucketId = bucketId,
+                            bucketName = bucketName,
+                            size = size,
+                        )
+                    )
+                }
             }
-        }
         return items
     }
 
@@ -261,7 +268,12 @@ class MediaStoreRepository(private val context: Context) {
                 val scale = maxDim.toFloat() / maxOf(decoded.width, decoded.height)
                 val targetW = (decoded.width * scale).toInt().coerceAtLeast(1)
                 val targetH = (decoded.height * scale).toInt().coerceAtLeast(1)
-                ThumbnailUtils.extractThumbnail(decoded, targetW, targetH, ThumbnailUtils.OPTIONS_RECYCLE_INPUT)
+                ThumbnailUtils.extractThumbnail(
+                    decoded,
+                    targetW,
+                    targetH,
+                    ThumbnailUtils.OPTIONS_RECYCLE_INPUT
+                )
             } else {
                 decoded
             }

@@ -92,13 +92,21 @@ class CameraPreviewTileView(
         addView(badgeView)
 
         textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-            override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+            override fun onSurfaceTextureAvailable(
+                surface: SurfaceTexture,
+                width: Int,
+                height: Int
+            ) {
                 if (isStarted) {
                     openCameraIfPermitted(width, height)
                 }
             }
 
-            override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
+            override fun onSurfaceTextureSizeChanged(
+                surface: SurfaceTexture,
+                width: Int,
+                height: Int
+            ) {
                 configureTransform(width, height)
             }
 
@@ -153,7 +161,8 @@ class CameraPreviewTileView(
         if (!hasPermission) return
 
         try {
-            val manager = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager ?: return
+            val manager =
+                context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager ?: return
             val cameraId = manager.cameraIdList.firstOrNull { id ->
                 val chars = manager.getCameraCharacteristics(id)
                 chars.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
@@ -203,7 +212,10 @@ class CameraPreviewTileView(
         try {
             val requestBuilder = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
                 addTarget(surface)
-                set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+                set(
+                    CaptureRequest.CONTROL_AF_MODE,
+                    CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
+                )
             }
             val callback = object : CameraCaptureSession.StateCallback() {
                 override fun onConfigured(session: CameraCaptureSession) {
