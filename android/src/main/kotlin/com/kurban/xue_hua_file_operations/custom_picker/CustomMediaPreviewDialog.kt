@@ -82,6 +82,7 @@ class CustomMediaPreviewDialog(
     private lateinit var selectedStripRecycler: RecyclerView
     private lateinit var confirmButton: TextView
     private var activeVideoView: VideoView? = null
+    private var lastRenderedStripIds: List<Long> = emptyList()
 
     private val selectedStripAdapter = SelectedStripAdapter()
 
@@ -136,12 +137,9 @@ class CustomMediaPreviewDialog(
         })
         contentContainer.addView(recyclerView)
 
-        // Top gradient chrome bar / 顶部柔和渐变悬浮操作栏
+        // Transparent floating top bar / 全透明顶部悬浮操作栏
         topChrome = FrameLayout(context).apply {
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(0xB8000000.toInt(), 0x55000000, Color.TRANSPARENT)
-            )
+            setBackgroundColor(Color.TRANSPARENT)
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -227,14 +225,11 @@ class CustomMediaPreviewDialog(
         topChrome.addView(topRow)
         contentContainer.addView(topChrome)
 
-        // Bottom gradient chrome bar + selected thumbnail strip + confirm button
-        // 底部柔和渐变操作栏 + 已选缩略图快速跳转条 + 右侧完成按钮
+        // Transparent floating bottom bar + selected thumbnail strip + confirm button
+        // 全透明底部悬浮操作栏 + 已选缩略图快速跳转条 + 右侧完成按钮
         bottomChrome = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            background = GradientDrawable(
-                GradientDrawable.Orientation.BOTTOM_TOP,
-                intArrayOf(0xCC000000.toInt(), 0x70000000, Color.TRANSPARENT)
-            )
+            setBackgroundColor(Color.TRANSPARENT)
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -245,6 +240,7 @@ class CustomMediaPreviewDialog(
         selectedStripRecycler = RecyclerView(context).apply {
             layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
             adapter = selectedStripAdapter
+            itemAnimator = null
             clipToPadding = false
             setPadding(dp(16), dp(8), dp(16), dp(8))
             visibility = View.GONE
@@ -454,14 +450,30 @@ class CustomMediaPreviewDialog(
 
         val count = selectedItems.size
         confirmButton.text = if (count > 0) "${config.strings.done} ($count)" else config.strings.done
-        confirmButton.alpha = if (count > 0 || !config.multiple) 1f else 0.45f
+        confirmButton.alpha = if (count > 0 || !config.multiple) 1f else 0.78f
 
         // Selected thumbnail strip in multi-select mode / 多选模式底部已选缩略图条
         if (config.multiple && selectedItems.isNotEmpty()) {
             selectedStripRecycler.visibility = View.VISIBLE
-            selectedStripAdapter.notifyDataSetChanged()
+            val stripIds = selectedItems.map { it.id }
+            if (stripIds != lastRenderedStripIds) {
+                lastRenderedStripIds = stripIds
+                selectedStripAdapter.notifyDataSetChanged()
+            } else {
+                // Only update border highlight in place on page swipe (zero flash).
+                // 滑动切换页面时仅就地更新边框高亮，不调用 notifyDataSetChanged，彻底杜绝闪烁。
+                updateVisibleStripHighlights()
+            }
         } else {
+            lastRenderedStripIds = emptyList()
             selectedStripRecycler.visibility = View.GONE
+        }
+    }
+
+    private fun updateVisibleStripHighlights() {
+        for (i in 0 until selectedStripRecycler.childCount) {
+            val child = selectedStripRecycler.getChildAt(i) ?: continue
+            (selectedStripRecycler.getChildViewHolder(child) as? SelectedStripHolder)?.updateHighlightOnly()
         }
     }
 
@@ -509,8 +521,8 @@ class CustomMediaPreviewDialog(
             container.addView(imageView)
         }
 
-        fun bind(item: MediaItem) {
-            val isCurrent = items.getOrNull(currentIndex)?.id == item.id
+        fun updateHighlightOnly() {
+            val isCurrent = boundId != -1L && items.getOrNull(currentIndex)?.id == boundId
             container.background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = 10 * density
@@ -519,7 +531,13 @@ class CustomMediaPreviewDialog(
                     setStroke((2.2f * density).roundToInt(), config.theme.primaryColor)
                 }
             }
-            if (boundId != item.id) {
+        }
+
+        fun bind(item: MediaItem) {
+            val idChanged = boundId != item.id
+            boundId = item.id
+            updateHighlightOnly()
+            if (idChanged) {
                 boundId = item.id
                 imageView.setImageBitmap(null)
                 repository.loadThumbnail(item.uri, (120 * density).roundToInt(), item.isVideo) { bmp ->

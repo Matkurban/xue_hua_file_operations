@@ -25,7 +25,7 @@ final class CustomMediaPreviewViewController: UIViewController,
 
     private let contentContainer = UIView()
     private var collectionView: UICollectionView!
-    private let topChrome = GradientChromeView(topToBottom: true)
+    private let topChrome = UIView()
     private let backButton = UIButton(type: .system)
     private let counterLabel = UILabel()
     private let selectBadgeHitButton = UIButton(type: .custom)
@@ -33,9 +33,10 @@ final class CustomMediaPreviewViewController: UIViewController,
     private let selectBadgeNumber = UILabel()
     private let selectBadgeCheck = UIImageView()
 
-    private let bottomChrome = GradientChromeView(topToBottom: false)
+    private let bottomChrome = UIView()
     private var stripCollectionView: UICollectionView!
     private var stripHeightConstraint: NSLayoutConstraint!
+    private var lastRenderedStripIds: [String] = []
     private let confirmButton = UIButton(type: .system)
 
     private var activePlayer: AVPlayer?
@@ -440,13 +441,34 @@ final class CustomMediaPreviewViewController: UIViewController,
         let count = ids.count
         let title = count > 0 ? "\(config.strings.done) (\(count))" : config.strings.done
         confirmButton.setTitle(title, for: .normal)
-        confirmButton.alpha = (count > 0 || !config.multiple) ? 1.0 : 0.45
+        confirmButton.alpha = (count > 0 || !config.multiple) ? 1.0 : 0.78
 
         let showStrip = config.multiple && count > 0
         stripHeightConstraint.constant = showStrip ? 66 : 0
         stripCollectionView.isHidden = !showStrip
         if showStrip {
-            stripCollectionView.reloadData()
+            if ids != lastRenderedStripIds {
+                lastRenderedStripIds = ids
+                UIView.performWithoutAnimation {
+                    self.stripCollectionView.reloadData()
+                }
+            } else {
+                // Only update border highlights in place when swiping pages (zero flash).
+                // 滑动切换页面时仅就地更新高亮边框，不触发 reloadData，彻底避免底部缩略图闪烁。
+                updateVisibleStripHighlights(currentId: currentId)
+            }
+        } else if !lastRenderedStripIds.isEmpty {
+            lastRenderedStripIds = []
+        }
+    }
+
+    private func updateVisibleStripHighlights(currentId: String) {
+        for cell in stripCollectionView.visibleCells {
+            guard let stripCell = cell as? SelectedStripCell else { continue }
+            stripCell.updateHighlight(
+                isCurrent: stripCell.assetId == currentId,
+                accentColor: config.theme.primaryColor
+            )
         }
     }
 
@@ -571,46 +593,13 @@ final class CustomMediaPreviewViewController: UIViewController,
     }
 }
 
-/// Soft vertical gradient overlay for top/bottom preview chrome.
-/// 预览页顶部/底部柔和渐变蒙层视图。
-private final class GradientChromeView: UIView {
-    private let gradientLayer = CAGradientLayer()
-
-    init(topToBottom: Bool) {
-        super.init(frame: .zero)
-        if topToBottom {
-            gradientLayer.colors = [
-                UIColor.black.withAlphaComponent(0.72).cgColor,
-                UIColor.black.withAlphaComponent(0.32).cgColor,
-                UIColor.clear.cgColor,
-            ]
-        } else {
-            gradientLayer.colors = [
-                UIColor.clear.cgColor,
-                UIColor.black.withAlphaComponent(0.45).cgColor,
-                UIColor.black.withAlphaComponent(0.82).cgColor,
-            ]
-        }
-        layer.insertSublayer(gradientLayer, at: 0)
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        gradientLayer.frame = bounds
-    }
-}
-
 /// Horizontal thumbnail cell in the bottom selected-items strip.
 /// 底部已选缩略图快速跳转条单元格。
 private final class SelectedStripCell: UICollectionViewCell {
     static let reuseId = "XueHuaSelectedStripCell"
 
     private let imageView = UIImageView()
-    private var assetId = ""
+    private(set) var assetId = ""
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -636,14 +625,18 @@ private final class SelectedStripCell: UICollectionViewCell {
         fatalError("init(coder:) has not been implemented")
     }
 
+    func updateHighlight(isCurrent: Bool, accentColor: UIColor) {
+        contentView.layer.borderWidth = isCurrent ? 2.2 : 0
+        contentView.layer.borderColor = isCurrent ? accentColor.cgColor : UIColor.clear.cgColor
+    }
+
     func configure(
         asset: PHAsset,
         repository: PhotoLibraryRepository,
         isCurrent: Bool,
         accentColor: UIColor
     ) {
-        contentView.layer.borderWidth = isCurrent ? 2.2 : 0
-        contentView.layer.borderColor = isCurrent ? accentColor.cgColor : UIColor.clear.cgColor
+        updateHighlight(isCurrent: isCurrent, accentColor: accentColor)
         guard assetId != asset.localIdentifier else { return }
         assetId = asset.localIdentifier
         imageView.image = nil
