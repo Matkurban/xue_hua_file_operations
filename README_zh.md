@@ -29,7 +29,7 @@
 
 ```yaml
 dependencies:
-  xue_hua_file_operations: ^1.5.0
+  xue_hua_file_operations: ^1.6.0
 ```
 
 然后执行：

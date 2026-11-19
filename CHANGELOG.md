@@ -1,9 +1,12 @@
 ## Unreleased
 
+## 1.6.0
+
 * **Customizable native mobile media picker.** Add `MediaPickerMode` (`system` / `custom`), `MediaPickerOptions`, `MediaPickerTheme`, and `MediaPickerStrings`, accepted as an optional `mediaPickerOptions` parameter on `pickFile` and `pickFiles`.
-* Android: implement native sheet-style custom media picker (`MediaStore` + LRU thumbnails, API 24–37 media permissions including Android 14+ limited access management, expandable half-to-fullscreen sheet, floating top pill bar, album dropdown, "Open in other app..." fallback, configurable 1x2 live Camera2 preview tile, right-edge fast-scroll date bubble, and full-screen image/video preview).
-* iOS: implement native UIKit custom media picker (`PhotoKit` + `PHCachingImageManager`, iOS 14+ `.limited` library management, iCloud export, expandable sheet, `UICollectionViewCompositionalLayout` with configurable 1x2 `AVCaptureSession` live camera tile, album dropdown, "Open in other app..." fallback, right-edge fast-scroll date bubble, and full-screen image/video preview).
-* Desktop (macOS, Windows, Linux) & Web: automatically fall back to each platform's standard file dialog when `MediaPickerMode.custom` is passed.
+* **Android:** implement a customizable native sheet-style media picker (`MediaStore` + LRU thumbnail cache, API 24–37 media read permissions including Android 14+ `READ_MEDIA_VISUAL_USER_SELECTED` partial-access management and resume permission re-checks, edge-to-edge transparent system bars, fluid slide/expand animations, floating top pill bar with album dropdown and "Open in other app..." fallback, configurable 1x2 live Camera2 preview tile, right-edge fast scroller with floating month-year date bubble, full-screen image/video preview, and native Android Vector Drawable icons).
+* **iOS:** implement a customizable native UIKit media picker (`PhotoKit` + `PHCachingImageManager`, iOS 14+ `.limited` library management, iCloud asset export, spring slide-up/down and expand animations, `UICollectionViewCompositionalLayout` with configurable 1x2 `AVCaptureSession` live camera tile, album dropdown, "Open in other app..." fallback to `PHPickerViewController`, right-edge fast scroller with date bubble, full-screen image/video preview, and native SF Symbols icons).
+* **Desktop & Web:** automatically fall back to each platform's standard file dialog when `MediaPickerMode.custom` is passed so cross-platform Flutter code needs no platform branching.
+* **Example:** redesign and modularize `example/lib/` into standard Flutter directories (`controllers/`, `pages/`, `widgets/`, `theme/`) using `ChangeNotifier` + `ListenableBuilder` (zero `setState`) and add custom picker mode/theme/toggle controls plus Android media permissions in the example manifest.
 
 ## 1.5.5
 

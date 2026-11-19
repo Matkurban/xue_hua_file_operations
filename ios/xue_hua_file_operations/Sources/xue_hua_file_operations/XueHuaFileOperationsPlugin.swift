@@ -89,6 +89,13 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
                 return topViewController(from: root)
             }
         }
+        // Fallback when no window is temporarily marked key (e.g. right after system permission alert).
+        // 兜底逻辑：系统权限弹窗刚关闭瞬间可能暂无 keyWindow，此时回退到首个有效窗口。
+        for scene in scenes {
+            if let root = scene.windows.first(where: { $0.rootViewController != nil })?.rootViewController {
+                return topViewController(from: root)
+            }
+        }
         return nil
     }
 
@@ -304,7 +311,10 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
                     )
                 }
             )
-            presenter.present(controller, animated: true)
+            // Present without UIKit fade so the controller runs its own spring slide-up animation.
+            // 关闭系统默认淡入转场，交由自定义选择器执行平滑的弹簧上滑弹出动画。
+            let activePresenter = self.rootViewController() ?? presenter
+            activePresenter.present(controller, animated: false)
         }
 
         let currentStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -315,7 +325,9 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
                 }
             }
         } else {
-            openWithStatus(currentStatus)
+            DispatchQueue.main.async {
+                openWithStatus(currentStatus)
+            }
         }
     }
 

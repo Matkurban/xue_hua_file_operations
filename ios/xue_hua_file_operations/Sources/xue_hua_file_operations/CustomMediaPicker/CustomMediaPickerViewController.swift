@@ -124,7 +124,6 @@ final class CustomMediaPickerViewController: UIViewController,
         super.viewDidAppear(animated)
         guard !hasAnimatedEntrance else { return }
         hasAnimatedEntrance = true
-        sheetTopConstraint.constant = isExpanded ? 0 : collapsedTopOffset
         UIView.animate(
             withDuration: 0.32,
             delay: 0,
@@ -133,7 +132,7 @@ final class CustomMediaPickerViewController: UIViewController,
             options: [.curveEaseOut]
         ) {
             self.scrimView.alpha = 1.0
-            self.view.layoutIfNeeded()
+            self.sheetContainer.transform = .identity
         }
     }
 
@@ -169,12 +168,14 @@ final class CustomMediaPickerViewController: UIViewController,
         sheetContainer.layer.cornerRadius = isExpanded ? 0 : config.theme.sheetCornerRadius
         sheetContainer.clipsToBounds = true
         sheetContainer.translatesAutoresizingMaskIntoConstraints = false
+        // Use transform for entrance/exit slide so Auto Layout keeps a valid non-zero height.
+        // 使用 transform 执行进出场滑动动画，避免压扁约束高度导致 Auto Layout 冲突。
+        sheetContainer.transform = CGAffineTransform(translationX: 0, y: UIScreen.main.bounds.height)
         view.addSubview(sheetContainer)
 
-        // Start off-screen for smooth slide-up entrance / 初始置于屏幕底部以便平滑滑入
         sheetTopConstraint = sheetContainer.topAnchor.constraint(
             equalTo: view.topAnchor,
-            constant: UIScreen.main.bounds.height
+            constant: isExpanded ? 0 : collapsedTopOffset
         )
 
         NSLayoutConstraint.activate([
@@ -438,6 +439,10 @@ final class CustomMediaPickerViewController: UIViewController,
     private func styleFloatingPill(_ button: UIButton, cornerRadius: CGFloat) {
         button.backgroundColor = config.theme.surfaceColor
         button.layer.cornerRadius = cornerRadius
+        button.layer.borderWidth = 1.0 / UIScreen.main.scale
+        button.layer.borderColor = (config.theme.isDark
+            ? UIColor.white.withAlphaComponent(0.14)
+            : UIColor.black.withAlphaComponent(0.08)).cgColor
         button.layer.shadowColor = UIColor.black.cgColor
         button.layer.shadowOpacity = 0.12
         button.layer.shadowRadius = 6
@@ -642,10 +647,9 @@ final class CustomMediaPickerViewController: UIViewController,
 
     private func dismissAnimated(completion: @escaping () -> Void) {
         stopVisibleCameraCells()
-        sheetTopConstraint.constant = UIScreen.main.bounds.height
         UIView.animate(withDuration: 0.24, delay: 0, options: [.curveEaseIn], animations: {
             self.scrimView.alpha = 0
-            self.view.layoutIfNeeded()
+            self.sheetContainer.transform = CGAffineTransform(translationX: 0, y: UIScreen.main.bounds.height)
         }, completion: { _ in
             self.dismiss(animated: false, completion: completion)
         })
@@ -900,8 +904,7 @@ final class CustomMediaPickerViewController: UIViewController,
     @objc private func handleOpenInOtherAppTap() {
         dismissPopover()
         deliveredResult = true
-        stopVisibleCameraCells()
-        dismiss(animated: true) {
+        dismissAnimated {
             self.onOpenInOtherApp()
         }
     }
@@ -915,8 +918,7 @@ final class CustomMediaPickerViewController: UIViewController,
         let assets = selectedAssetIds.compactMap { selectedAssetsById[$0] }
         guard !assets.isEmpty else { return }
         deliveredResult = true
-        stopVisibleCameraCells()
-        dismiss(animated: true) {
+        dismissAnimated {
             self.onComplete(assets)
         }
     }
