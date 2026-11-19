@@ -38,6 +38,8 @@ import java.io.FileInputStream
 import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.util.UUID
+import com.kurban.xue_hua_file_operations.custom_picker.CustomMediaPickerConfig
+import com.kurban.xue_hua_file_operations.custom_picker.CustomMediaPickerDialog
 import kotlin.concurrent.thread
 import androidx.core.content.edit
 
@@ -63,13 +65,23 @@ class XueHuaFileOperationsPlugin :
     private var openDocumentTreeLauncher: ActivityResultLauncher<Uri?>? = null
     private var createDocumentLauncher: ActivityResultLauncher<Pair<String, String>>? = null
     private var writeStoragePermissionLauncher: ActivityResultLauncher<String>? = null
+    private var readMediaPermissionsLauncher: ActivityResultLauncher<Array<String>>? = null
     private var pickVisualMediaLauncher: ActivityResultLauncher<PickVisualMediaRequest>? = null
     private var pickMultipleVisualMediaLauncher:
             ActivityResultLauncher<PickVisualMediaRequest>? = null
     private var captureLauncher: ActivityResultLauncher<Intent>? = null
     private var cameraPermissionLauncher: ActivityResultLauncher<String>? = null
     private var pendingCapture: CaptureRequest? = null
+    private var pendingCustomPickerCall: MethodCall? = null
+    private var pendingCustomPickerMultiple: Boolean = false
+    private var activeCustomPickerDialog: CustomMediaPickerDialog? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    /**
+     * Read-access state for the custom media picker across Android API levels.
+     * 自定义媒体选择器在各 Android 版本下的媒体读取权限状态。
+     */
+    private enum class MediaReadAccess { FULL, LIMITED, DENIED }
 
     /** A camera capture that is waiting for the camera app / permission. */
     private class CaptureRequest(
@@ -351,28 +363,242 @@ class XueHuaFileOperationsPlugin :
         return PickVisualMediaRequest(mediaType)
     }
 
+    /**
+     * Returns true when the caller explicitly requested the custom sheet-style
+     * media picker for image/video/media types.
+     * 判断本次调用是否明确请求了自定义抽屉式媒体选择器（仅对图片/视频/媒体生效）。
+     */
+    private fun isCustomMediaPickerRequested(call: MethodCall): Boolean {
+        if (photoPickerRequest(call) == null) return false
+        val opts = call.argument<Map<*, *>>("mediaPickerOptions") ?: return false
+        return (opts["mode"] as? String) == "custom"
+    }
+
+    private fun requiredReadMediaPermissions(mediaType: String): Array<String> {
+        return when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> {
+                when (mediaType) {
+                    "image" -> arrayOf(
+                        Manifest.permission.READ_MEDIA_IMAGES,
+                        Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
+                    )
+                    "video" -> arrayOf(
+                        Manifest.permission.READ_MEDIA_VIDEO,
+                        Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
+                    )
+                    else -> arrayOf(
+                        Manifest.permission.READ_MEDIA_IMAGES,
+                        Manifest.permission.READ_MEDIA_VIDEO,
+                        Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
+                    )
+                }
+            }
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
+                when (mediaType) {
+                    "image" -> arrayOf(Manifest.permission.READ_MEDIA_IMAGES)
+                    "video" -> arrayOf(Manifest.permission.READ_MEDIA_VIDEO)
+                    else -> arrayOf(
+                        Manifest.permission.READ_MEDIA_IMAGES,
+                        Manifest.permission.READ_MEDIA_VIDEO
+                    )
+                }
+            }
+            else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+    }
+
+    private fun mediaReadAccess(act: Activity, mediaType: String): MediaReadAccess {
+        fun granted(perm: String): Boolean =
+            ContextCompat.checkSelfPermission(act, perm) == PackageManager.PERMISSION_GRANTED
+
+        return when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
+                val hasImages = granted(Manifest.permission.READ_MEDIA_IMAGES)
+                val hasVideos = granted(Manifest.permission.READ_MEDIA_VIDEO)
+                val full = when (mediaType) {
+                    "image" -> hasImages
+                    "video" -> hasVideos
+                    else -> hasImages && hasVideos
+                }
+                if (full) return MediaReadAccess.FULL
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+                    granted(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+                ) {
+                    return MediaReadAccess.LIMITED
+                }
+                if (mediaType == "media" && (hasImages || hasVideos)) {
+                    return MediaReadAccess.LIMITED
+                }
+                MediaReadAccess.DENIED
+            }
+            else -> {
+                if (granted(Manifest.permission.READ_EXTERNAL_STORAGE)) MediaReadAccess.FULL
+                else MediaReadAccess.DENIED
+            }
+        }
+    }
+
+    private fun launchCustomMediaPicker(act: Activity, call: MethodCall, multiple: Boolean) {
+        pendingCustomPickerCall = call
+        pendingCustomPickerMultiple = multiple
+        val mediaType = call.argument<String>("type") ?: "media"
+        val access = mediaReadAccess(act, mediaType)
+        if (access == MediaReadAccess.DENIED) {
+            val launcher = readMediaPermissionsLauncher
+            if (launcher != null) {
+                launcher.launch(requiredReadMediaPermissions(mediaType))
+                return
+            }
+        }
+        showCustomMediaPickerDialog(act, call, multiple, access)
+    }
+
+    private fun onReadMediaPermissionsResult(results: Map<String, Boolean>) {
+        val act = activity ?: return
+        val call = pendingCustomPickerCall ?: return
+        val multiple = pendingCustomPickerMultiple
+        val mediaType = call.argument<String>("type") ?: "media"
+        val access = mediaReadAccess(act, mediaType)
+        val existing = activeCustomPickerDialog
+        if (existing != null && existing.isShowing) {
+            existing.reloadMedia()
+            return
+        }
+        showCustomMediaPickerDialog(act, call, multiple, access)
+    }
+
+    private fun showCustomMediaPickerDialog(
+        act: Activity,
+        call: MethodCall,
+        multiple: Boolean,
+        access: MediaReadAccess,
+    ) {
+        val mediaType = call.argument<String>("type") ?: "media"
+        val optionsMap = call.argument<Map<*, *>>("mediaPickerOptions")
+        val config = CustomMediaPickerConfig.fromArgs(
+            context = act,
+            mediaType = mediaType,
+            multiple = multiple,
+            maxFiles = pendingMaxFiles,
+            withData = pendingWithData,
+            optionsMap = optionsMap,
+        )
+        val dialog = CustomMediaPickerDialog(
+            hostActivity = act,
+            config = config,
+            isLimitedAccess = access == MediaReadAccess.LIMITED,
+            isPermissionDenied = access == MediaReadAccess.DENIED,
+            onResult = { uris ->
+                activeCustomPickerDialog = null
+                if (uris == null) {
+                    val res = pendingResult
+                    clearPending()
+                    res?.success(null)
+                } else if (multiple) {
+                    onOpenMultipleDocumentsResult(uris)
+                } else {
+                    onOpenDocumentResult(uris.firstOrNull())
+                }
+            },
+            onOpenInOtherApp = {
+                activeCustomPickerDialog = null
+                launchSystemMediaOrDocumentPicker(call, multiple)
+            },
+            onLaunchCamera = {
+                activeCustomPickerDialog = null
+                launchCameraFromCustomPicker(act, mediaType, multiple)
+            },
+            onManageLimitedPermission = {
+                readMediaPermissionsLauncher?.launch(requiredReadMediaPermissions(mediaType))
+            },
+            onOpenAppSettings = {
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.fromParts("package", act.packageName, null)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                try {
+                    act.startActivity(intent)
+                } catch (_: ActivityNotFoundException) {
+                }
+            },
+        )
+        activeCustomPickerDialog = dialog
+        dialog.show()
+    }
+
+    private fun launchCameraFromCustomPicker(act: Activity, mediaType: String, multiple: Boolean) {
+        val isVideo = mediaType == "video"
+        val file = try {
+            val dir = File(act.cacheDir, CaptureImageResizer.CAPTURE_DIR).apply { mkdirs() }
+            File.createTempFile(UUID.randomUUID().toString(), if (isVideo) ".mp4" else ".jpg", dir)
+        } catch (e: Exception) {
+            val res = pendingResult
+            clearPending()
+            res?.error("io_error", e.message, null)
+            return
+        }
+        val request = CaptureRequest(
+            isVideo = isVideo,
+            file = file,
+            preferredCamera = "rear",
+            maxDurationSeconds = null,
+            maxWidth = null,
+            maxHeight = null,
+            imageQuality = null,
+            withData = pendingWithData,
+        )
+        pendingSingleAsMultiple = multiple
+        pendingCapture = request
+        if (isCameraPermissionDeclared(act) &&
+            ContextCompat.checkSelfPermission(act, Manifest.permission.CAMERA) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            cameraPermissionLauncher?.launch(Manifest.permission.CAMERA)
+            return
+        }
+        launchCamera(act, request)
+    }
+
+    private fun launchSystemMediaOrDocumentPicker(call: MethodCall, multiple: Boolean) {
+        val photoRequest = photoPickerRequest(call)
+        if (photoRequest != null) {
+            if (!multiple || pendingMaxFiles == 1) {
+                val single = pickVisualMediaLauncher
+                if (single != null) {
+                    pendingSingleAsMultiple = multiple
+                    single.launch(photoRequest)
+                    return
+                }
+            } else {
+                val multi = pickMultipleVisualMediaLauncher
+                if (multi != null) {
+                    multi.launch(photoRequest)
+                    return
+                }
+            }
+        }
+        val launcher = if (multiple) openMultipleDocumentsLauncher else openDocumentLauncher
+        if (launcher == null) {
+            clearPending()
+            return
+        }
+        launcher.launch(mimeTypesFromArgs(call))
+    }
+
     private fun pickFile(call: MethodCall, result: Result) {
         val withData = call.argument<Boolean>("withData") ?: false
         if (tryPickHook(multiple = false, withData = withData, maxFiles = null, result = result)) {
             return
         }
-        ensureActivity(result) ?: return
-        val photoRequest = photoPickerRequest(call)
+        val act = ensureActivity(result) ?: return
         pendingResult = result
         pendingWithData = withData
         pendingMaxFiles = null
-        if (photoRequest != null) {
-            val launcher = pickVisualMediaLauncher
-            if (launcher != null) {
-                launcher.launch(photoRequest)
-                return
-            }
-        }
-        val launcher = openDocumentLauncher ?: run {
-            clearPending()
+        if (isCustomMediaPickerRequested(call)) {
+            launchCustomMediaPicker(act, call, multiple = false)
             return
         }
-        launcher.launch(mimeTypesFromArgs(call))
+        launchSystemMediaOrDocumentPicker(call, multiple = false)
     }
 
     private fun pickFiles(call: MethodCall, result: Result) {
@@ -381,33 +607,15 @@ class XueHuaFileOperationsPlugin :
         if (tryPickHook(multiple = true, withData = withData, maxFiles = maxFiles, result = result)) {
             return
         }
-        ensureActivity(result) ?: return
-        val photoRequest = photoPickerRequest(call)
+        val act = ensureActivity(result) ?: return
         pendingResult = result
         pendingWithData = withData
         pendingMaxFiles = maxFiles
-        if (photoRequest != null) {
-            // Photo Picker enforces maxFiles == 1 via the single-select
-            // contract; larger limits are validated after selection.
-            if (pendingMaxFiles == 1) {
-                val single = pickVisualMediaLauncher
-                if (single != null) {
-                    pendingSingleAsMultiple = true
-                    single.launch(photoRequest)
-                    return
-                }
-            }
-            val launcher = pickMultipleVisualMediaLauncher
-            if (launcher != null) {
-                launcher.launch(photoRequest)
-                return
-            }
-        }
-        val launcher = openMultipleDocumentsLauncher ?: run {
-            clearPending()
+        if (isCustomMediaPickerRequested(call)) {
+            launchCustomMediaPicker(act, call, multiple = true)
             return
         }
-        launcher.launch(mimeTypesFromArgs(call))
+        launchSystemMediaOrDocumentPicker(call, multiple = true)
     }
 
     private fun pickDirectory(result: Result) {
@@ -975,6 +1183,7 @@ class XueHuaFileOperationsPlugin :
     private fun onCaptureResult(resultCode: Int) {
         val result = pendingResult
         val request = pendingCapture
+        val asMultiple = pendingSingleAsMultiple
         if (result == null || request == null) {
             // The Activity was recreated while the camera was open: remember the
             // outcome so retrieveLostCapture() can hand it over.
@@ -996,7 +1205,13 @@ class XueHuaFileOperationsPlugin :
         thread {
             try {
                 val map = captureToMap(ctx, request)
-                mainHandler.post { result.success(mapOf("file" to map)) }
+                mainHandler.post {
+                    if (asMultiple) {
+                        result.success(mapOf("files" to listOf(map)))
+                    } else {
+                        result.success(mapOf("file" to map))
+                    }
+                }
             } catch (e: Exception) {
                 mainHandler.post { result.error("io_error", e.message, null) }
             }
@@ -1288,6 +1503,8 @@ class XueHuaFileOperationsPlugin :
         pendingPermissionOnly = false
         pendingSingleAsMultiple = false
         pendingCapture = null
+        pendingCustomPickerCall = null
+        pendingCustomPickerMultiple = false
     }
 
     private fun registerLaunchers(componentActivity: ComponentActivity) {
@@ -1313,6 +1530,10 @@ class XueHuaFileOperationsPlugin :
             "xue_hua_file_operations/write_storage_permission",
             ActivityResultContracts.RequestPermission()
         ) { granted -> onWriteStoragePermissionResult(granted) }
+        readMediaPermissionsLauncher = registry.register(
+            "xue_hua_file_operations/read_media_permissions",
+            ActivityResultContracts.RequestMultiplePermissions()
+        ) { results -> onReadMediaPermissionsResult(results) }
         pickVisualMediaLauncher = registry.register(
             "xue_hua_file_operations/pick_visual_media",
             ActivityResultContracts.PickVisualMedia()
@@ -1337,6 +1558,7 @@ class XueHuaFileOperationsPlugin :
         openDocumentTreeLauncher?.unregister()
         createDocumentLauncher?.unregister()
         writeStoragePermissionLauncher?.unregister()
+        readMediaPermissionsLauncher?.unregister()
         pickVisualMediaLauncher?.unregister()
         pickMultipleVisualMediaLauncher?.unregister()
         captureLauncher?.unregister()
@@ -1346,6 +1568,7 @@ class XueHuaFileOperationsPlugin :
         openDocumentTreeLauncher = null
         createDocumentLauncher = null
         writeStoragePermissionLauncher = null
+        readMediaPermissionsLauncher = null
         pickVisualMediaLauncher = null
         pickMultipleVisualMediaLauncher = null
         captureLauncher = null
@@ -1354,6 +1577,8 @@ class XueHuaFileOperationsPlugin :
 
     /** Fails any in-flight operation so the Dart Future never hangs. */
     private fun failPendingOnDetach() {
+        activeCustomPickerDialog?.dismiss()
+        activeCustomPickerDialog = null
         val result = pendingResult ?: return
         // A capture in flight keeps its saved state so retrieveLostCapture()
         // can still recover the photo / video after the Activity restarts.

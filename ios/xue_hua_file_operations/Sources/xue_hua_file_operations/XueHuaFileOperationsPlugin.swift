@@ -1,4 +1,5 @@
 import Flutter
+import Photos
 import PhotosUI
 import UIKit
 import UniformTypeIdentifiers
@@ -176,8 +177,18 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
 
         // Media types must go through the Photos picker: the document picker
         // browses the Files app, which cannot show the photo library.
-        if !directory, let mediaType = photoPickerType(from: args)
-        {
+        if !directory, let mediaType = photoPickerType(from: args) {
+            if isCustomMediaPickerRequested(from: args) {
+                presentCustomMediaPicker(
+                    type: mediaType,
+                    multiple: multiple,
+                    maxFiles: pendingMaxFiles,
+                    withData: pendingWithData,
+                    args: args,
+                    presenter: presenter
+                )
+                return
+            }
             presentPhotoPicker(
                 type: mediaType,
                 multiple: multiple,
@@ -191,6 +202,121 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
         picker.delegate = self
         picker.allowsMultipleSelection = multiple && !directory
         presenter.present(picker, animated: true)
+    }
+
+    /// Returns true when the caller explicitly requested the custom sheet-style
+    /// media picker.
+    /// 判断本次调用是否明确请求了自定义抽屉式媒体选择器。
+    private func isCustomMediaPickerRequested(from args: [String: Any]?) -> Bool {
+        guard let opts = args?["mediaPickerOptions"] as? [String: Any] else { return false }
+        return (opts["mode"] as? String) == "custom"
+    }
+
+    /// Requests PhotoKit read authorization if undetermined and presents
+    /// [CustomMediaPickerViewController].
+    /// 若相册读取权限尚未决定则先申请授权，随后弹出自定义抽屉式媒体选择器。
+    private func presentCustomMediaPicker(
+        type: String,
+        multiple: Bool,
+        maxFiles: Int?,
+        withData: Bool,
+        args: [String: Any]?,
+        presenter: UIViewController
+    ) {
+        let openWithStatus: (PHAuthorizationStatus) -> Void = { [weak self] status in
+            guard let self = self else { return }
+            let optionsDict = args?["mediaPickerOptions"] as? [String: Any]
+            let config = CustomMediaPickerConfig.from(
+                mediaType: type,
+                multiple: multiple,
+                maxFiles: maxFiles,
+                withData: withData,
+                optionsDict: optionsDict
+            )
+            let controller = CustomMediaPickerViewController(
+                config: config,
+                authStatus: status,
+                onComplete: { [weak self] assets in
+                    guard let self = self else { return }
+                    let result = self.pendingResult
+                    let mode = self.pendingMode
+                    let includeData = self.pendingWithData
+                    self.clearPending()
+                    guard let result = result else { return }
+                    guard let assets = assets, !assets.isEmpty else {
+                        result(nil)
+                        return
+                    }
+                    PhotoLibraryRepository().exportAssets(assets, withData: includeData) { maps, error in
+                        if let error = error {
+                            result(FlutterError(
+                                code: "io_error",
+                                message: error.localizedDescription,
+                                details: nil
+                            ))
+                            return
+                        }
+                        if mode == .pickFile {
+                            if let first = maps.first {
+                                result(["file": first])
+                            } else {
+                                result(nil)
+                            }
+                        } else {
+                            result(["files": maps])
+                        }
+                    }
+                },
+                onOpenInOtherApp: { [weak self] in
+                    guard let self = self, let topPresenter = self.rootViewController() else { return }
+                    self.presentPhotoPicker(
+                        type: type,
+                        multiple: multiple,
+                        maxFiles: maxFiles,
+                        presenter: topPresenter
+                    )
+                },
+                onLaunchCamera: { [weak self] in
+                    guard let self = self, let topPresenter = self.rootViewController() else { return }
+                    let result = self.pendingResult
+                    let mode = self.pendingMode
+                    let includeData = self.pendingWithData
+                    self.clearPending()
+                    guard let result = result else { return }
+                    let captureCall = FlutterMethodCall(
+                        methodName: type == "video" ? "captureVideo" : "capturePhoto",
+                        arguments: ["preferredCamera": "rear", "withData": includeData]
+                    )
+                    self.cameraCapture.capture(
+                        call: captureCall,
+                        result: { captureRes in
+                            if mode == .pickFiles,
+                               let dict = captureRes as? [String: Any],
+                               let file = dict["file"]
+                            {
+                                result(["files": [file]])
+                            } else {
+                                result(captureRes)
+                            }
+                        },
+                        isVideo: type == "video",
+                        presenter: topPresenter
+                    )
+                }
+            )
+            presenter.present(controller, animated: true)
+        }
+
+        let currentStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        if currentStatus == .notDetermined {
+            PHPhotoLibrary.requestAuthorization(for: .readWrite) { newStatus in
+                DispatchQueue.main.async {
+                    openWithStatus(newStatus)
+                }
+            }
+        } else {
+            openWithStatus(currentStatus)
+        }
     }
 
     /// Returns the media type when the request should use the Photos picker,

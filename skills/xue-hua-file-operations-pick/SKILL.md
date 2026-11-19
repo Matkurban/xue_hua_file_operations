@@ -13,7 +13,9 @@ description: >-
 * Treat user cancel as `null`. Do not catch `ErrorCode.cancelled` for cancel.
 * Pass `maxFiles` only when it is `>= 1`. A smaller value throws `ErrorCode.invalidArgs` before the picker opens.
 * When the user selects more files than `maxFiles`, catch `FileOperationsException` with `ErrorCode.tooManyFiles`.
-* On iOS / Android, `FileType.image`, `FileType.video`, and `FileType.media` without `allowedExtensions` / `allowedMimeTypes` open the system photo picker. Pass custom filters to keep the document picker.
+* On iOS / Android, `FileType.image`, `FileType.video`, and `FileType.media` without `allowedExtensions` / `allowedMimeTypes` open the system photo picker by default (`MediaPickerMode.system`), or the plugin's customizable native sheet-style picker when `mediaPickerOptions: MediaPickerOptions(mode: MediaPickerMode.custom, ...)` is provided. Desktop and Web automatically fall back to their standard file dialogs.
+* Pass `MediaPickerTheme` and `MediaPickerStrings` inside `MediaPickerOptions` to customize colors, corner radius, grid spacing, and localized labels.
+* Pass custom filters (`allowedExtensions` / `allowedMimeTypes`) to keep the document picker.
 * Set `withData: true` only when the app needs `PlatformFile.bytes`. On Web, bytes are always loaded and `path` is always `null`.
 * After `pickDirectory` on iOS, keep `DirectoryResult.identifier` (security-scoped bookmark). Do not rely on the display `path` across launches.
 * Catch `FileOperationsException` for hard failures.

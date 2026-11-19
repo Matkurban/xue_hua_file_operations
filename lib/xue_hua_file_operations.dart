@@ -8,6 +8,8 @@ import 'src/models/file_type.dart';
 import 'src/models/gallery_media_type.dart';
 import 'src/models/gallery_permission_status.dart';
 import 'src/models/lost_capture_result.dart';
+import 'src/models/media_picker_mode.dart';
+import 'src/models/media_picker_options.dart';
 import 'src/models/platform_file.dart';
 import 'src/models/save_file_result.dart';
 import 'src/models/save_to_gallery_result.dart';
@@ -21,6 +23,10 @@ export 'src/models/file_type.dart';
 export 'src/models/gallery_media_type.dart';
 export 'src/models/gallery_permission_status.dart';
 export 'src/models/lost_capture_result.dart';
+export 'src/models/media_picker_mode.dart';
+export 'src/models/media_picker_options.dart';
+export 'src/models/media_picker_strings.dart';
+export 'src/models/media_picker_theme.dart';
 export 'src/models/platform_file.dart';
 export 'src/models/save_file_result.dart';
 export 'src/models/save_to_gallery_result.dart';
@@ -34,27 +40,71 @@ class XueHuaFileOperations {
   XueHuaFileOperationsPlatform get _platform =>
       XueHuaFileOperationsPlatform.instance;
 
+  /// Validates [MediaPickerOptions] arguments before forwarding to native.
+  /// 在转发到原生端之前校验 [MediaPickerOptions] 参数合法性。
+  void _validateMediaPickerOptions(MediaPickerOptions? options) {
+    if (options == null) return;
+    if (options.crossAxisCount < 2 || options.crossAxisCount > 6) {
+      throw FileOperationsException(
+        ErrorCode.invalidArgs,
+        message: 'crossAxisCount must be between 2 and 6',
+        details: {'crossAxisCount': options.crossAxisCount},
+      );
+    }
+    final radius = options.theme?.sheetCornerRadius;
+    if (radius != null && radius < 0) {
+      throw FileOperationsException(
+        ErrorCode.invalidArgs,
+        message: 'sheetCornerRadius cannot be negative',
+        details: {'sheetCornerRadius': radius},
+      );
+    }
+    final spacing = options.theme?.gridSpacing;
+    if (spacing != null && spacing < 0) {
+      throw FileOperationsException(
+        ErrorCode.invalidArgs,
+        message: 'gridSpacing cannot be negative',
+        details: {'gridSpacing': spacing},
+      );
+    }
+  }
+
   /// Pick a single file. Returns `null` if the user cancels.
+  /// 选择单个文件；用户取消时返回 `null`。
+  ///
+  /// Pass [mediaPickerOptions] with [MediaPickerMode.custom] to present the
+  /// customizable native media picker when [type] is [FileType.image],
+  /// [FileType.video], or [FileType.media] on Android and iOS.
+  /// 在 Android 与 iOS 端选择图片/视频/媒体时，可传入 [mediaPickerOptions]
+  /// （[MediaPickerMode.custom]）以展示可自定义样式的原生媒体选择器。
   Future<PlatformFile?> pickFile({
     bool withData = false,
     String? dialogTitle,
     FileType type = FileType.any,
     List<String>? allowedExtensions,
     List<String>? allowedMimeTypes,
+    MediaPickerOptions? mediaPickerOptions,
   }) {
+    _validateMediaPickerOptions(mediaPickerOptions);
     return _platform.pickFile(
       withData: withData,
       dialogTitle: dialogTitle,
       type: type,
       allowedExtensions: allowedExtensions,
       allowedMimeTypes: allowedMimeTypes,
+      mediaPickerOptions: mediaPickerOptions,
     );
   }
 
   /// Pick multiple files. Returns `null` if the user cancels.
+  /// 选择多个文件；用户取消时返回 `null`。
   ///
   /// [maxFiles] defaults to `null` (unlimited). If set and the user selects
   /// more files, throws [FileOperationsException] with [ErrorCode.tooManyFiles].
+  /// Pass [mediaPickerOptions] with [MediaPickerMode.custom] to present the
+  /// customizable native media picker on Android and iOS.
+  /// [maxFiles] 默认为 `null`（不限数量）。在 Android 与 iOS 端可传入
+  /// [mediaPickerOptions] 启用可自定义样式的原生媒体选择器。
   Future<List<PlatformFile>?> pickFiles({
     int? maxFiles,
     bool withData = false,
@@ -62,6 +112,7 @@ class XueHuaFileOperations {
     FileType type = FileType.any,
     List<String>? allowedExtensions,
     List<String>? allowedMimeTypes,
+    MediaPickerOptions? mediaPickerOptions,
   }) {
     if (maxFiles != null && maxFiles < 1) {
       throw FileOperationsException(
@@ -70,6 +121,7 @@ class XueHuaFileOperations {
         details: {'maxFiles': maxFiles},
       );
     }
+    _validateMediaPickerOptions(mediaPickerOptions);
     return _platform.pickFiles(
       maxFiles: maxFiles,
       withData: withData,
@@ -77,6 +129,7 @@ class XueHuaFileOperations {
       type: type,
       allowedExtensions: allowedExtensions,
       allowedMimeTypes: allowedMimeTypes,
+      mediaPickerOptions: mediaPickerOptions,
     );
   }
 

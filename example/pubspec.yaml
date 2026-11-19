@@ -13,9 +13,9 @@ dependencies:
 
   xue_hua_file_operations:
     path: ../
-  cupertino_icons: ^1.0.9
-  material_ui: ^1.4.0
-  cupertino_ui: ^1.1.1
+  cupertino_icons: ^2.0.0
+  material_ui: ^1.11.1
+  cupertino_ui: ^1.1.7
   flex_color_scheme: ^9.0.0
 
 dev_dependencies:

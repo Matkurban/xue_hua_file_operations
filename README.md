@@ -11,6 +11,7 @@ Cross-platform Flutter plugin for picking files and directories, saving files (s
 - Pick a single file (`pickFile`) or multiple files (`pickFiles`)
 - Filter by high-level `FileType`, file extensions, and/or MIME types
 - Optional `maxFiles` limit for multi-select (validated after selection)
+- Mobile customizable native media picker (`MediaPickerMode.custom`) with expandable half-to-fullscreen sheet, album dropdown, configurable 1x2 live camera tile, fast-scroll date indicator, full-screen preview, and custom colors/strings
 - Capture a photo (`capturePhoto`) or record a video (`captureVideo`) with the system camera, with front/rear preference, photo size/quality and video duration limits
 - Recover a capture lost to Android Activity recreation (`retrieveLostCapture`)
 - Pick a directory (`pickDirectory`)
@@ -308,16 +309,18 @@ Future<PlatformFile?> pickFile({
   FileType type = FileType.any,
   List<String>? allowedExtensions,
   List<String>? allowedMimeTypes,
+  MediaPickerOptions? mediaPickerOptions,
 })
 ```
 
-| Parameter           | Type            | Default        | Description                                                                                                                                                                                                                                                                                     |
-|---------------------|-----------------|----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `withData`          | `bool`          | `false`        | When `true`, load file contents into `PlatformFile.bytes`. On Web, bytes are always loaded regardless of this flag.                                                                                                                                                                             |
-| `dialogTitle`       | `String?`       | `null`         | Optional title for the native dialog where supported (desktop). May be ignored on some platforms (e.g. Android SAF, Web).                                                                                                                                                                       |
-| `type`              | `FileType`      | `FileType.any` | High-level filter: `any`, `media`, `image`, `video`, `audio`, or `custom`. On iOS / Android, `image` / `video` / `media` (without extension / MIME filters) opens the system photo picker (iOS `PHPickerViewController`, Android Photo Picker) so items can be selected from the photo library. |
-| `allowedExtensions` | `List<String>?` | `null`         | Allowed extensions (with or without leading `.`), e.g. `['pdf', 'txt']`. Used especially with `FileType.custom` or as an additional filter.                                                                                                                                                     |
-| `allowedMimeTypes`  | `List<String>?` | `null`         | Allowed MIME types, e.g. `['application/pdf']`. Behavior depends on the platform picker.                                                                                                                                                                                                        |
+| Parameter            | Type                  | Default        | Description                                                                                                                                                                                                                                                                                     |
+|----------------------|-----------------------|----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `withData`           | `bool`                | `false`        | When `true`, load file contents into `PlatformFile.bytes`. On Web, bytes are always loaded regardless of this flag.                                                                                                                                                                             |
+| `dialogTitle`        | `String?`             | `null`         | Optional title for the native dialog where supported (desktop). May be ignored on some platforms (e.g. Android SAF, Web).                                                                                                                                                                       |
+| `type`               | `FileType`            | `FileType.any` | High-level filter: `any`, `media`, `image`, `video`, `audio`, or `custom`. On iOS / Android, `image` / `video` / `media` (without extension / MIME filters) opens the photo picker so items can be selected from the photo library.                                                             |
+| `allowedExtensions`  | `List<String>?`       | `null`         | Allowed extensions (with or without leading `.`), e.g. `['pdf', 'txt']`. Used especially with `FileType.custom` or as an additional filter.                                                                                                                                                     |
+| `allowedMimeTypes`   | `List<String>?`       | `null`         | Allowed MIME types, e.g. `['application/pdf']`. Behavior depends on the platform picker.                                                                                                                                                                                                        |
+| `mediaPickerOptions` | `MediaPickerOptions?` | `null`         | Mobile media picker presentation options (`MediaPickerMode.system` or `MediaPickerMode.custom` with `MediaPickerTheme` and `MediaPickerStrings`). Automatically falls back to standard pickers on desktop and Web.                                                                              |
 
 **Returns:** `PlatformFile?` — selected file, or `null` on cancel.
 
@@ -333,17 +336,19 @@ Future<List<PlatformFile>?> pickFiles({
   FileType type = FileType.any,
   List<String>? allowedExtensions,
   List<String>? allowedMimeTypes,
+  MediaPickerOptions? mediaPickerOptions,
 })
 ```
 
-| Parameter           | Type            | Default        | Description                                                                                                                                                                                     |
-|---------------------|-----------------|----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `maxFiles`          | `int?`          | `null`         | Maximum number of files allowed. `null` means unlimited. If provided, must be `>= 1`. If the user selects more than `maxFiles`, throws `FileOperationsException` with `ErrorCode.tooManyFiles`. |
-| `withData`          | `bool`          | `false`        | Same as `pickFile`.                                                                                                                                                                             |
-| `dialogTitle`       | `String?`       | `null`         | Same as `pickFile`.                                                                                                                                                                             |
-| `type`              | `FileType`      | `FileType.any` | Same as `pickFile`.                                                                                                                                                                             |
-| `allowedExtensions` | `List<String>?` | `null`         | Same as `pickFile`.                                                                                                                                                                             |
-| `allowedMimeTypes`  | `List<String>?` | `null`         | Same as `pickFile`.                                                                                                                                                                             |
+| Parameter            | Type                  | Default        | Description                                                                                                                                                                                     |
+|----------------------|-----------------------|----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `maxFiles`           | `int?`                | `null`         | Maximum number of files allowed. `null` means unlimited. If provided, must be `>= 1`. If the user selects more than `maxFiles`, throws `FileOperationsException` with `ErrorCode.tooManyFiles`. |
+| `withData`           | `bool`                | `false`        | Same as `pickFile`.                                                                                                                                                                             |
+| `dialogTitle`        | `String?`             | `null`         | Same as `pickFile`.                                                                                                                                                                             |
+| `type`               | `FileType`            | `FileType.any` | Same as `pickFile`.                                                                                                                                                                             |
+| `allowedExtensions`  | `List<String>?`       | `null`         | Same as `pickFile`.                                                                                                                                                                             |
+| `allowedMimeTypes`   | `List<String>?`       | `null`         | Same as `pickFile`.                                                                                                                                                                             |
+| `mediaPickerOptions` | `MediaPickerOptions?` | `null`         | Same as `pickFile`.                                                                                                                                                                             |
 
 **Returns:** `List<PlatformFile>?` — selected files, or `null` on cancel.
 

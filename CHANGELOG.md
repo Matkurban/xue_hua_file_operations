@@ -1,5 +1,10 @@
 ## Unreleased
 
+* **Customizable native mobile media picker.** Add `MediaPickerMode` (`system` / `custom`), `MediaPickerOptions`, `MediaPickerTheme`, and `MediaPickerStrings`, accepted as an optional `mediaPickerOptions` parameter on `pickFile` and `pickFiles`.
+* Android: implement native sheet-style custom media picker (`MediaStore` + LRU thumbnails, API 24–37 media permissions including Android 14+ limited access management, expandable half-to-fullscreen sheet, floating top pill bar, album dropdown, "Open in other app..." fallback, configurable 1x2 live Camera2 preview tile, right-edge fast-scroll date bubble, and full-screen image/video preview).
+* iOS: implement native UIKit custom media picker (`PhotoKit` + `PHCachingImageManager`, iOS 14+ `.limited` library management, iCloud export, expandable sheet, `UICollectionViewCompositionalLayout` with configurable 1x2 `AVCaptureSession` live camera tile, album dropdown, "Open in other app..." fallback, right-edge fast-scroll date bubble, and full-screen image/video preview).
+* Desktop (macOS, Windows, Linux) & Web: automatically fall back to each platform's standard file dialog when `MediaPickerMode.custom` is passed.
+
 ## 1.5.5
 
 * iOS: raise plugin minimum to **14.0** and drop deprecated `UIDocumentPicker` / MobileCoreServices iOS 13 fallbacks so Xcode builds with zero deprecation warnings.

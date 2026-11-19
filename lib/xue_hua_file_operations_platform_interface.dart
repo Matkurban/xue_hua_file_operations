@@ -8,6 +8,7 @@ import 'src/models/file_type.dart';
 import 'src/models/gallery_media_type.dart';
 import 'src/models/gallery_permission_status.dart';
 import 'src/models/lost_capture_result.dart';
+import 'src/models/media_picker_options.dart';
 import 'src/models/platform_file.dart';
 import 'src/models/save_file_result.dart';
 import 'src/models/save_to_gallery_result.dart';
@@ -34,6 +35,7 @@ abstract class XueHuaFileOperationsPlatform extends PlatformInterface {
     FileType type = FileType.any,
     List<String>? allowedExtensions,
     List<String>? allowedMimeTypes,
+    MediaPickerOptions? mediaPickerOptions,
   }) {
     throw UnimplementedError('pickFile() has not been implemented.');
   }
@@ -45,6 +47,7 @@ abstract class XueHuaFileOperationsPlatform extends PlatformInterface {
     FileType type = FileType.any,
     List<String>? allowedExtensions,
     List<String>? allowedMimeTypes,
+    MediaPickerOptions? mediaPickerOptions,
   }) {
     throw UnimplementedError('pickFiles() has not been implemented.');
   }

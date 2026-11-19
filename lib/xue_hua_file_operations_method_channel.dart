@@ -9,6 +9,7 @@ import 'src/models/file_type.dart';
 import 'src/models/gallery_media_type.dart';
 import 'src/models/gallery_permission_status.dart';
 import 'src/models/lost_capture_result.dart';
+import 'src/models/media_picker_options.dart';
 import 'src/models/platform_file.dart';
 import 'src/models/save_file_result.dart';
 import 'src/models/save_to_gallery_result.dart';
@@ -26,6 +27,7 @@ class MethodChannelXueHuaFileOperations extends XueHuaFileOperationsPlatform {
     List<String>? allowedExtensions,
     List<String>? allowedMimeTypes,
     int? maxFiles,
+    MediaPickerOptions? mediaPickerOptions,
   }) {
     return <String, Object?>{
       'withData': withData,
@@ -34,6 +36,8 @@ class MethodChannelXueHuaFileOperations extends XueHuaFileOperationsPlatform {
       'allowedExtensions': ?allowedExtensions,
       'allowedMimeTypes': ?allowedMimeTypes,
       'maxFiles': ?maxFiles,
+      if (mediaPickerOptions != null)
+        'mediaPickerOptions': mediaPickerOptions.toMap(),
     };
   }
 
@@ -56,6 +60,7 @@ class MethodChannelXueHuaFileOperations extends XueHuaFileOperationsPlatform {
     FileType type = FileType.any,
     List<String>? allowedExtensions,
     List<String>? allowedMimeTypes,
+    MediaPickerOptions? mediaPickerOptions,
   }) async {
     final result = await _invoke<Map<Object?, Object?>>(
       'pickFile',
@@ -65,6 +70,7 @@ class MethodChannelXueHuaFileOperations extends XueHuaFileOperationsPlatform {
         type: type,
         allowedExtensions: allowedExtensions,
         allowedMimeTypes: allowedMimeTypes,
+        mediaPickerOptions: mediaPickerOptions,
       ),
     );
     if (result == null) return null;
@@ -81,6 +87,7 @@ class MethodChannelXueHuaFileOperations extends XueHuaFileOperationsPlatform {
     FileType type = FileType.any,
     List<String>? allowedExtensions,
     List<String>? allowedMimeTypes,
+    MediaPickerOptions? mediaPickerOptions,
   }) async {
     final result = await _invoke<Map<Object?, Object?>>(
       'pickFiles',
@@ -91,6 +98,7 @@ class MethodChannelXueHuaFileOperations extends XueHuaFileOperationsPlatform {
         allowedExtensions: allowedExtensions,
         allowedMimeTypes: allowedMimeTypes,
         maxFiles: maxFiles,
+        mediaPickerOptions: mediaPickerOptions,
       ),
     );
     if (result == null) return null;

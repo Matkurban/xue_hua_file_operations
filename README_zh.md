@@ -11,6 +11,7 @@
 - 选择单个文件（`pickFile`）或多个文件（`pickFiles`）
 - 支持按 `FileType`、扩展名和/或 MIME 类型过滤
 - 多选可选 `maxFiles` 上限（在用户选择后校验）
+- 移动端可自定义原生抽屉式媒体选择器（`MediaPickerMode.custom`），支持半屏上拉全屏、相册下拉浮窗、可配置 1×2 实时相机格、右侧日期快滑条、全屏预览及完整颜色与多语言自定义
 - 使用系统相机拍照（`capturePhoto`）或录像（`captureVideo`），支持前/后置摄像头偏好、照片尺寸与质量、视频时长上限
 - 找回因 Android Activity 被销毁而丢失的拍摄结果（`retrieveLostCapture`）
 - 选择目录（`pickDirectory`）
@@ -309,16 +310,18 @@ Future<PlatformFile?> pickFile({
   FileType type = FileType.any,
   List<String>? allowedExtensions,
   List<String>? allowedMimeTypes,
+  MediaPickerOptions? mediaPickerOptions,
 })
 ```
 
-| 参数                | 类型            | 默认值         | 说明                                                                                                                                                                                                                                            |
-|---------------------|-----------------|----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `withData`          | `bool`          | `false`        | 为 `true` 时将文件内容读入 `PlatformFile.bytes`。在 Web 上无论该标志如何都会加载 bytes。                                                                                                                                                        |
-| `dialogTitle`       | `String?`       | `null`         | 原生对话框标题（在支持的平台上，如桌面）。部分平台可能忽略（如 Android SAF、Web）。                                                                                                                                                             |
-| `type`              | `FileType`      | `FileType.any` | 高级类型过滤：`any`、`media`、`image`、`video`、`audio` 或 `custom`。在 iOS / Android 上，`image` / `video` / `media`（且未传扩展名 / MIME 过滤）会打开系统照片选择器（iOS `PHPickerViewController`，Android Photo Picker），可直接从相册选择。 |
-| `allowedExtensions` | `List<String>?` | `null`         | 允许的扩展名（可带或不带前导 `.`），例如 `['pdf', 'txt']`。常与 `FileType.custom` 配合，或作为附加过滤。                                                                                                                                        |
-| `allowedMimeTypes`  | `List<String>?` | `null`         | 允许的 MIME 类型，例如 `['application/pdf']`。具体行为取决于平台选择器。                                                                                                                                                                        |
+| 参数                 | 类型                  | 默认值         | 说明                                                                                                                                                                                      |
+|----------------------|-----------------------|----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `withData`           | `bool`                | `false`        | 为 `true` 时将文件内容读入 `PlatformFile.bytes`。在 Web 上无论该标志如何都会加载 bytes。                                                                                                  |
+| `dialogTitle`        | `String?`             | `null`         | 原生对话框标题（在支持的平台上，如桌面）。部分平台可能忽略（如 Android SAF、Web）。                                                                                                       |
+| `type`               | `FileType`            | `FileType.any` | 高级类型过滤：`any`、`media`、`image`、`video`、`audio` 或 `custom`。在 iOS / Android 上，`image` / `video` / `media`（且未传扩展名 / MIME 过滤）会打开照片选择器，可直接从相册选择。   |
+| `allowedExtensions`  | `List<String>?`       | `null`         | 允许的扩展名（可带或不带前导 `.`），例如 `['pdf', 'txt']`。常与 `FileType.custom` 配合，或作为附加过滤。                                                                                  |
+| `allowedMimeTypes`   | `List<String>?`       | `null`         | 允许的 MIME 类型，例如 `['application/pdf']`。具体行为取决于平台选择器。                                                                                                                 |
+| `mediaPickerOptions` | `MediaPickerOptions?` | `null`         | 移动端媒体选择器展示配置（`MediaPickerMode.system` 或 `MediaPickerMode.custom`，支持 `MediaPickerTheme` 与 `MediaPickerStrings`）。桌面端与 Web 端自动回退到标准选择器。                |
 
 **返回值：** `PlatformFile?` — 选中的文件；取消时为 `null`。
 
@@ -334,17 +337,19 @@ Future<List<PlatformFile>?> pickFiles({
   FileType type = FileType.any,
   List<String>? allowedExtensions,
   List<String>? allowedMimeTypes,
+  MediaPickerOptions? mediaPickerOptions,
 })
 ```
 
-| 参数                | 类型            | 默认值         | 说明                                                                                                                                                        |
-|---------------------|-----------------|----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `maxFiles`          | `int?`          | `null`         | 允许选择的最大文件数。`null` 表示不限制。若提供则必须 `>= 1`。若用户选择数量超过 `maxFiles`，抛出带 `ErrorCode.tooManyFiles` 的 `FileOperationsException`。 |
-| `withData`          | `bool`          | `false`        | 同 `pickFile`。                                                                                                                                             |
-| `dialogTitle`       | `String?`       | `null`         | 同 `pickFile`。                                                                                                                                             |
-| `type`              | `FileType`      | `FileType.any` | 同 `pickFile`。                                                                                                                                             |
-| `allowedExtensions` | `List<String>?` | `null`         | 同 `pickFile`。                                                                                                                                             |
-| `allowedMimeTypes`  | `List<String>?` | `null`         | 同 `pickFile`。                                                                                                                                             |
+| 参数                 | 类型                  | 默认值         | 说明                                                                                                                                                        |
+|----------------------|-----------------------|----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `maxFiles`           | `int?`                | `null`         | 允许选择的最大文件数。`null` 表示不限制。若提供则必须 `>= 1`。若用户选择数量超过 `maxFiles`，抛出带 `ErrorCode.tooManyFiles` 的 `FileOperationsException`。 |
+| `withData`           | `bool`                | `false`        | 同 `pickFile`。                                                                                                                                             |
+| `dialogTitle`        | `String?`             | `null`         | 同 `pickFile`。                                                                                                                                             |
+| `type`               | `FileType`            | `FileType.any` | 同 `pickFile`。                                                                                                                                             |
+| `allowedExtensions`  | `List<String>?`       | `null`         | 同 `pickFile`。                                                                                                                                             |
+| `allowedMimeTypes`   | `List<String>?`       | `null`         | 同 `pickFile`。                                                                                                                                             |
+| `mediaPickerOptions` | `MediaPickerOptions?` | `null`         | 同 `pickFile`。                                                                                                                                             |
 
 **返回值：** `List<PlatformFile>?` — 选中的文件列表；取消时为 `null`。
 

@@ -24,6 +24,7 @@ Future<PlatformFile?> pickFile({
   FileType type = FileType.any,
   List<String>? allowedExtensions,
   List<String>? allowedMimeTypes,
+  MediaPickerOptions? mediaPickerOptions,
 })
 ```
 
@@ -34,12 +35,13 @@ Future<PlatformFile?> pickFile({
 | `type` | `FileType` | `FileType.any` | High-level filter. See `FileType` below. |
 | `allowedExtensions` | `List<String>?` | `null` | Extensions with or without a leading `.`, e.g. `['pdf', 'txt']`. Used especially with `FileType.custom` or as an extra filter. |
 | `allowedMimeTypes` | `List<String>?` | `null` | MIME types, e.g. `['application/pdf']`. Behavior depends on the platform picker. |
+| `mediaPickerOptions` | `MediaPickerOptions?` | `null` | Optional mobile media picker configuration (`MediaPickerMode.system` or `MediaPickerMode.custom` with `MediaPickerTheme`, `MediaPickerStrings`, `showCameraTile`, `allowOpenInOtherApp`, `crossAxisCount`, `initialExpanded`, `enablePreview`). Ignored on desktop and Web. |
 
 **Returns:** `PlatformFile?` — selected file, or `null` on cancel.
 
 **Throws:** `FileOperationsException` for hard failures (see the errors skill). Cancel is `null`, not an exception.
 
-On iOS / Android, `FileType.image` / `video` / `media` **without** `allowedExtensions` / `allowedMimeTypes` opens the system photo picker (iOS `PHPickerViewController` on 14+, Android Photo Picker). Custom filters keep the document picker. iOS 13 falls back to the document picker.
+On iOS / Android, `FileType.image` / `video` / `media` **without** `allowedExtensions` / `allowedMimeTypes` opens the system photo picker (`MediaPickerMode.system`) or the customizable native sheet picker (`MediaPickerMode.custom`). Custom filters keep the document picker.
 
 ---
 
@@ -55,6 +57,7 @@ Future<List<PlatformFile>?> pickFiles({
   FileType type = FileType.any,
   List<String>? allowedExtensions,
   List<String>? allowedMimeTypes,
+  MediaPickerOptions? mediaPickerOptions,
 })
 ```
 
@@ -66,6 +69,7 @@ Future<List<PlatformFile>?> pickFiles({
 | `type` | `FileType` | `FileType.any` | Same as `pickFile`. |
 | `allowedExtensions` | `List<String>?` | `null` | Same as `pickFile`. |
 | `allowedMimeTypes` | `List<String>?` | `null` | Same as `pickFile`. |
+| `mediaPickerOptions` | `MediaPickerOptions?` | `null` | Same as `pickFile`. |
 
 **Returns:** `List<PlatformFile>?` — selected files, or `null` on cancel.
 

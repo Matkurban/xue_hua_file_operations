@@ -4,9 +4,13 @@ import 'package:xue_hua_file_operations/src/errors/error_code.dart';
 import 'package:xue_hua_file_operations/src/errors/file_operations_exception.dart';
 import 'package:xue_hua_file_operations/src/models/camera_facing.dart';
 import 'package:xue_hua_file_operations/src/models/file_type.dart';
-import 'package:xue_hua_file_operations/src/utils/media_resize.dart';
 import 'package:xue_hua_file_operations/src/models/gallery_media_type.dart';
 import 'package:xue_hua_file_operations/src/models/gallery_permission_status.dart';
+import 'package:xue_hua_file_operations/src/models/media_picker_mode.dart';
+import 'package:xue_hua_file_operations/src/models/media_picker_options.dart';
+import 'package:xue_hua_file_operations/src/models/media_picker_strings.dart';
+import 'package:xue_hua_file_operations/src/models/media_picker_theme.dart';
+import 'package:xue_hua_file_operations/src/utils/media_resize.dart';
 import 'package:xue_hua_file_operations/xue_hua_file_operations_method_channel.dart';
 
 void main() {
@@ -211,6 +215,59 @@ void main() {
     expect(files, hasLength(2));
     expect(files?[0].name, 'a.txt');
     expect(files?[1].hasBytes, isTrue);
+  });
+
+  test('pickFiles encodes MediaPickerOptions theme and strings', () async {
+    late MethodCall captured;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+          captured = methodCall;
+          return null;
+        });
+
+    await platform.pickFiles(
+      type: FileType.media,
+      maxFiles: 9,
+      mediaPickerOptions: const MediaPickerOptions(
+        mode: MediaPickerMode.custom,
+        showCameraTile: false,
+        allowOpenInOtherApp: false,
+        crossAxisCount: 4,
+        initialExpanded: true,
+        enablePreview: true,
+        theme: MediaPickerTheme(
+          brightness: Brightness.dark,
+          primaryColor: Color(0xFF3390EC),
+          backgroundColor: Color(0xFF1C1C1E),
+          sheetCornerRadius: 24.0,
+          gridSpacing: 3.0,
+        ),
+        strings: MediaPickerStrings(
+          galleryTitle: '相册',
+          allMedia: '所有媒体',
+          done: '发送',
+        ),
+      ),
+    );
+
+    final args = captured.arguments as Map;
+    final opts = args['mediaPickerOptions'] as Map;
+    expect(opts['mode'], 'custom');
+    expect(opts['showCameraTile'], isFalse);
+    expect(opts['allowOpenInOtherApp'], isFalse);
+    expect(opts['crossAxisCount'], 4);
+    expect(opts['initialExpanded'], isTrue);
+    expect(opts['enablePreview'], isTrue);
+    final theme = opts['theme'] as Map;
+    expect(theme['brightness'], 'dark');
+    expect(theme['primaryColor'], const Color(0xFF3390EC).toARGB32());
+    expect(theme['backgroundColor'], const Color(0xFF1C1C1E).toARGB32());
+    expect(theme['sheetCornerRadius'], 24.0);
+    expect(theme['gridSpacing'], 3.0);
+    final strings = opts['strings'] as Map;
+    expect(strings['galleryTitle'], '相册');
+    expect(strings['allMedia'], '所有媒体');
+    expect(strings['done'], '发送');
   });
 
   test('pickFiles maps PlatformException to FileOperationsException', () async {

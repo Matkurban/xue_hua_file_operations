@@ -10,6 +10,7 @@ class MockXueHuaFileOperationsPlatform
     with MockPlatformInterfaceMixin
     implements XueHuaFileOperationsPlatform {
   Map<String, Object?>? lastCapture;
+  MediaPickerOptions? lastMediaPickerOptions;
 
   @override
   Future<PlatformFile?> pickFile({
@@ -18,7 +19,9 @@ class MockXueHuaFileOperationsPlatform
     FileType type = FileType.any,
     List<String>? allowedExtensions,
     List<String>? allowedMimeTypes,
+    MediaPickerOptions? mediaPickerOptions,
   }) async {
+    lastMediaPickerOptions = mediaPickerOptions;
     return PlatformFile(
       name: 'a.txt',
       size: 3,
@@ -36,7 +39,9 @@ class MockXueHuaFileOperationsPlatform
     FileType type = FileType.any,
     List<String>? allowedExtensions,
     List<String>? allowedMimeTypes,
+    MediaPickerOptions? mediaPickerOptions,
   }) async {
+    lastMediaPickerOptions = mediaPickerOptions;
     return [
       const PlatformFile(name: 'a.txt', size: 1, path: '/tmp/a.txt'),
       const PlatformFile(name: 'b.txt', size: 1, path: '/tmp/b.txt'),
@@ -253,9 +258,19 @@ void main() {
     final fake = MockXueHuaFileOperationsPlatform();
     XueHuaFileOperationsPlatform.instance = fake;
 
-    final file = await XueHuaFileOperations.instance.pickFile(withData: true);
+    const options = MediaPickerOptions(
+      mode: MediaPickerMode.custom,
+      crossAxisCount: 4,
+      showCameraTile: false,
+    );
+    final file = await XueHuaFileOperations.instance.pickFile(
+      withData: true,
+      type: FileType.media,
+      mediaPickerOptions: options,
+    );
     expect(file?.name, 'a.txt');
     expect(file?.hasBytes, isTrue);
+    expect(fake.lastMediaPickerOptions, options);
   });
 
   test('pickFiles rejects invalid maxFiles', () async {
@@ -263,6 +278,38 @@ void main() {
       () => XueHuaFileOperations.instance.pickFiles(maxFiles: 0),
       throwsA(isA<FileOperationsException>()),
     );
+  });
+
+  test('pickFile / pickFiles reject invalid MediaPickerOptions', () {
+    for (final call in <Future<Object?> Function()>[
+      () => XueHuaFileOperations.instance.pickFile(
+        mediaPickerOptions: const MediaPickerOptions(crossAxisCount: 1),
+      ),
+      () => XueHuaFileOperations.instance.pickFiles(
+        mediaPickerOptions: const MediaPickerOptions(crossAxisCount: 7),
+      ),
+      () => XueHuaFileOperations.instance.pickFile(
+        mediaPickerOptions: const MediaPickerOptions(
+          theme: MediaPickerTheme(sheetCornerRadius: -1),
+        ),
+      ),
+      () => XueHuaFileOperations.instance.pickFiles(
+        mediaPickerOptions: const MediaPickerOptions(
+          theme: MediaPickerTheme(gridSpacing: -2),
+        ),
+      ),
+    ]) {
+      expect(
+        call,
+        throwsA(
+          isA<FileOperationsException>().having(
+            (e) => e.code,
+            'code',
+            ErrorCode.invalidArgs,
+          ),
+        ),
+      );
+    }
   });
 
   test('saveFile requires bytes or sourcePath', () async {

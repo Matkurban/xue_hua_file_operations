@@ -37,11 +37,25 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
   bool _withData = false;
   int? _maxFiles;
   FileType _pickType = FileType.any;
+  MediaPickerMode _pickerMode = MediaPickerMode.system;
+  bool _showCameraTile = true;
+  bool _enablePreview = true;
+  Color _accentColor = const Color(0xFF2AABEE);
   String _status = 'Ready';
   List<PlatformFile> _files = const [];
   DirectoryResult? _directory;
   PlatformFile? _selected;
   CameraFacing _camera = CameraFacing.rear;
+
+  MediaPickerOptions? get _mediaPickerOptions {
+    if (_pickerMode == MediaPickerMode.system) return null;
+    return MediaPickerOptions(
+      mode: MediaPickerMode.custom,
+      showCameraTile: _showCameraTile,
+      enablePreview: _enablePreview,
+      theme: MediaPickerTheme(primaryColor: _accentColor),
+    );
+  }
 
   Future<void> _run(Future<void> Function() action) async {
     try {
@@ -103,7 +117,11 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
   });
 
   Future<void> _pickFile() => _run(() async {
-    final file = await _ops.pickFile(withData: _withData, type: _pickType);
+    final file = await _ops.pickFile(
+      withData: _withData,
+      type: _pickType,
+      mediaPickerOptions: _mediaPickerOptions,
+    );
     if (!mounted) return;
     if (file == null) {
       setState(() => _status = 'Cancelled');
@@ -121,6 +139,7 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
       withData: _withData,
       maxFiles: _maxFiles,
       type: _pickType,
+      mediaPickerOptions: _mediaPickerOptions,
     );
     if (!mounted) return;
     if (files == null) {
@@ -362,6 +381,54 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
             onSelectionChanged: (selection) =>
                 setState(() => _pickType = selection.first),
           ),
+          const SizedBox(height: 8),
+          SegmentedButton<MediaPickerMode>(
+            key: const ValueKey('mediaPickerMode'),
+            segments: const [
+              ButtonSegment(
+                value: MediaPickerMode.system,
+                label: Text('System Picker'),
+              ),
+              ButtonSegment(
+                value: MediaPickerMode.custom,
+                label: Text('Custom Picker'),
+              ),
+            ],
+            selected: {_pickerMode},
+            onSelectionChanged: (selection) =>
+                setState(() => _pickerMode = selection.first),
+          ),
+          if (_pickerMode == MediaPickerMode.custom) ...[
+            SwitchListTile(
+              key: const ValueKey('showCameraTile'),
+              title: const Text('Show live camera tile'),
+              value: _showCameraTile,
+              onChanged: (v) => setState(() => _showCameraTile = v),
+            ),
+            SwitchListTile(
+              key: const ValueKey('enablePreview'),
+              title: const Text('Enable full-screen preview'),
+              value: _enablePreview,
+              onChanged: (v) => setState(() => _enablePreview = v),
+            ),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final entry in const <String, Color>{
+                  'Sky Blue': Color(0xFF2AABEE),
+                  'Indigo': Color(0xFF5856D6),
+                  'Emerald': Color(0xFF10B981),
+                  'Coral': Color(0xFFEF4444),
+                }.entries)
+                  ChoiceChip(
+                    label: Text(entry.key),
+                    selected: _accentColor == entry.value,
+                    onSelected: (_) =>
+                        setState(() => _accentColor = entry.value),
+                  ),
+              ],
+            ),
+          ],
           const SizedBox(height: 8),
           SegmentedButton<CameraFacing>(
             segments: const [

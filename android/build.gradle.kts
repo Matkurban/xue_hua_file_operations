@@ -9,7 +9,7 @@ buildscript {
     }
 
     dependencies {
-        classpath("com.android.tools.build:gradle:9.1.0")
+        classpath("com.android.tools.build:gradle:9.1.1")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
     }
 }
@@ -75,6 +75,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.19.1")
     implementation("androidx.activity:activity-ktx:1.13.0")
     implementation("androidx.exifinterface:exifinterface:1.4.1")
+    implementation("androidx.recyclerview:recyclerview:1.4.0")
     testImplementation("org.jetbrains.kotlin:kotlin-test")
     testImplementation("org.mockito:mockito-core:5.24.0")
 }
