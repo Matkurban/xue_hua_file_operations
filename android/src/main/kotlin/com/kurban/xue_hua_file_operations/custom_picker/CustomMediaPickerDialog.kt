@@ -4,7 +4,9 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Dialog
 import android.graphics.Color
+import android.graphics.PorterDuff
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
@@ -25,9 +27,9 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.kurban.xue_hua_file_operations.R
 import kotlin.concurrent.thread
 import kotlin.math.roundToInt
-import androidx.core.graphics.drawable.toDrawable
 
 /**
  * Customizable native sheet-style media picker for Android.
@@ -35,10 +37,12 @@ import androidx.core.graphics.drawable.toDrawable
  * album dropdown popover, overflow menu ("Open in other app..."), optional 1x2 live
  * camera preview tile, right-edge fast scroller with floating month-year bubble,
  * full-screen preview dialog, and bottom confirmation bar.
+ * All toolbar, menu, badge, and scroller icons use native Android Vector Drawables.
  *
  * Android 端可自定义样式的原生抽屉式媒体选择器。
  * 支持半屏上拉展开至全屏、顶部悬浮胶囊栏、相册下拉浮窗、更多菜单（使用其它应用打开…）、
- * 可配置的左上角 1×2 实时相机预览格、右侧快速滚动与日期浮窗、全屏预览页及底部确认栏。
+ * 可配置的左上角 1×2 实时相机预览格、右侧快速滚动与日期浮窗、全屏预览页及底部确认栏；
+ * 全部工具栏、菜单、角标与滚轮图标均采用原生 Android Vector Drawable。
  */
 class CustomMediaPickerDialog(
     private val hostActivity: Activity,
@@ -71,13 +75,13 @@ class CustomMediaPickerDialog(
 
     private lateinit var sheetContainer: FrameLayout
     private lateinit var topBarContainer: FrameLayout
-    private lateinit var albumTitleButton: TextView
+    private lateinit var albumTitleText: TextView
     private lateinit var recyclerView: RecyclerView
     private lateinit var emptyStateContainer: LinearLayout
     private lateinit var bottomConfirmBar: FrameLayout
     private lateinit var confirmButton: TextView
     private lateinit var selectedHintView: TextView
-    private lateinit var fastScrollThumb: TextView
+    private lateinit var fastScrollThumb: FrameLayout
     private lateinit var dateBubbleView: TextView
     private var activeCameraTile: CameraPreviewTileView? = null
     private var activePopup: PopupWindow? = null
@@ -93,7 +97,7 @@ class CustomMediaPickerDialog(
         super.onCreate(savedInstanceState)
         requestWindowFeature(Window.FEATURE_NO_TITLE)
         window?.apply {
-            setBackgroundDrawable(Color.TRANSPARENT.toDrawable())
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
             setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         }
 
@@ -135,8 +139,7 @@ class CustomMediaPickerDialog(
         }
         sheetContainer.addView(contentColumn)
 
-        // Drag handle area (visible especially in half-sheet mode)
-        // 顶部拖拽手柄区域（支持上下拖动切换半屏/全屏或下滑关闭）
+        // Drag handle area / 顶部拖拽手柄区域
         val handleContainer = buildDragHandleArea(density)
         contentColumn.addView(handleContainer)
 
@@ -334,7 +337,6 @@ class CustomMediaPickerDialog(
         }
     }
 
-    @SuppressLint("SetTextI18n")
     private fun buildFloatingTopBar(density: Float): FrameLayout {
         val bar = FrameLayout(hostActivity).apply {
             setPadding(
@@ -351,14 +353,11 @@ class CustomMediaPickerDialog(
         }
 
         val btnSize = (42 * density).roundToInt()
+        val iconSize = (22 * density).roundToInt()
         val elevationPx = 6 * density
 
-        // Back / close circular button / 左侧圆形返回按钮
-        val backBtn = TextView(hostActivity).apply {
-            text = "←"
-            textSize = 20f
-            setTextColor(config.theme.iconColor)
-            gravity = Gravity.CENTER
+        // Back / close circular vector icon button / 左侧圆形返回矢量图标按钮
+        val backBtn = FrameLayout(hostActivity).apply {
             elevation = elevationPx
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
@@ -366,26 +365,21 @@ class CustomMediaPickerDialog(
             }
             layoutParams =
                 FrameLayout.LayoutParams(btnSize, btnSize, Gravity.START or Gravity.CENTER_VERTICAL)
+            addView(ImageView(hostActivity).apply {
+                setImageResource(R.drawable.xh_ic_arrow_back)
+                setColorFilter(config.theme.iconColor, PorterDuff.Mode.SRC_IN)
+                layoutParams = FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER)
+            })
             setOnClickListener { dismiss() }
         }
         bar.addView(backBtn)
 
-        // Center album dropdown pill / 居中相册切换胶囊
-        albumTitleButton = TextView(hostActivity).apply {
-            text = "${config.strings.galleryTitle} ▾"
-            textSize = 16f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(config.theme.textColor)
+        // Center album dropdown pill with vector chevron / 居中相册切换胶囊（文本 + 矢量下拉箭头）
+        val albumPill = LinearLayout(hostActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            maxLines = 1
-            ellipsize = TextUtils.TruncateAt.END
             elevation = elevationPx
-            setPadding(
-                (18 * density).roundToInt(),
-                (9 * density).roundToInt(),
-                (18 * density).roundToInt(),
-                (9 * density).roundToInt()
-            )
+            setPadding((18 * density).roundToInt(), 0, (12 * density).roundToInt(), 0)
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = 22 * density
@@ -401,16 +395,34 @@ class CustomMediaPickerDialog(
             }
             setOnClickListener { showAlbumDropdown(this) }
         }
-        bar.addView(albumTitleButton)
 
-        // Right overflow button (⋮) / 右侧更多操作按钮
+        albumTitleText = TextView(hostActivity).apply {
+            text = config.strings.galleryTitle
+            textSize = 16f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(config.theme.textColor)
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+        albumPill.addView(albumTitleText)
+
+        albumPill.addView(ImageView(hostActivity).apply {
+            setImageResource(R.drawable.xh_ic_arrow_drop_down)
+            setColorFilter(config.theme.iconColor, PorterDuff.Mode.SRC_IN)
+            val arrowSize = (20 * density).roundToInt()
+            layoutParams = LinearLayout.LayoutParams(arrowSize, arrowSize).apply {
+                marginStart = (2 * density).roundToInt()
+            }
+        })
+        bar.addView(albumPill)
+
+        // Right overflow vector icon button / 右侧更多操作矢量图标按钮
         if (config.allowOpenInOtherApp) {
-            val moreBtn = TextView(hostActivity).apply {
-                text = "⋮"
-                textSize = 20f
-                typeface = Typeface.DEFAULT_BOLD
-                setTextColor(config.theme.iconColor)
-                gravity = Gravity.CENTER
+            val moreBtn = FrameLayout(hostActivity).apply {
                 elevation = elevationPx
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
@@ -421,6 +433,11 @@ class CustomMediaPickerDialog(
                     btnSize,
                     Gravity.END or Gravity.CENTER_VERTICAL
                 )
+                addView(ImageView(hostActivity).apply {
+                    setImageResource(R.drawable.xh_ic_more_vert)
+                    setColorFilter(config.theme.iconColor, PorterDuff.Mode.SRC_IN)
+                    layoutParams = FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER)
+                })
                 setOnClickListener { showOverflowMenu(this) }
             }
             bar.addView(moreBtn)
@@ -429,7 +446,6 @@ class CustomMediaPickerDialog(
         return bar
     }
 
-    @SuppressLint("SetTextI18n")
     private fun showAlbumDropdown(anchor: View) {
         if (albums.isEmpty()) return
         activePopup?.dismiss()
@@ -538,9 +554,8 @@ class CustomMediaPickerDialog(
         ).apply {
             isOutsideTouchable = true
             elevation = 16 * density
-            setBackgroundDrawable(Color.TRANSPARENT.toDrawable())
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         }
-        // Constrain height when many albums exist / 相册较多时限制弹窗最大高度
         scrollView.layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             minOf((albums.size * 58 * density).roundToInt(), maxHeight)
@@ -553,7 +568,6 @@ class CustomMediaPickerDialog(
         )
     }
 
-    @SuppressLint("SetTextI18n")
     private fun showOverflowMenu(anchor: View) {
         activePopup?.dismiss()
         val density = hostActivity.resources.displayMetrics.density
@@ -561,10 +575,10 @@ class CustomMediaPickerDialog(
         val card = LinearLayout(hostActivity).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(
+                (14 * density).roundToInt(),
+                (8 * density).roundToInt(),
                 (16 * density).roundToInt(),
-                (10 * density).roundToInt(),
-                (16 * density).roundToInt(),
-                (10 * density).roundToInt()
+                (8 * density).roundToInt()
             )
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
@@ -574,10 +588,10 @@ class CustomMediaPickerDialog(
             elevation = 12 * density
         }
 
-        val itemRow = TextView(hostActivity).apply {
-            text = "↗  ${config.strings.openInOtherApp}"
-            textSize = 15f
-            setTextColor(config.theme.textColor)
+        // Menu row with vector open-in-new icon + text / 带矢量图标的外部应用打开菜单项
+        val itemRow = LinearLayout(hostActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             setPadding(
                 (4 * density).roundToInt(),
                 (10 * density).roundToInt(),
@@ -591,19 +605,34 @@ class CustomMediaPickerDialog(
                 onOpenInOtherApp()
             }
         }
+        itemRow.addView(ImageView(hostActivity).apply {
+            setImageResource(R.drawable.xh_ic_open_in_new)
+            setColorFilter(config.theme.iconColor, PorterDuff.Mode.SRC_IN)
+            val iconPx = (20 * density).roundToInt()
+            layoutParams = LinearLayout.LayoutParams(iconPx, iconPx).apply {
+                marginEnd = (12 * density).roundToInt()
+            }
+        })
+        itemRow.addView(TextView(hostActivity).apply {
+            text = config.strings.openInOtherApp
+            textSize = 15f
+            setTextColor(config.theme.textColor)
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+        })
         card.addView(itemRow)
 
-        val popupWidth = (screenWidthPx * 0.60f).roundToInt()
+        val popupWidth = (screenWidthPx * 0.62f).roundToInt()
         val popup = PopupWindow(card, popupWidth, ViewGroup.LayoutParams.WRAP_CONTENT, true).apply {
             isOutsideTouchable = true
             elevation = 16 * density
-            setBackgroundDrawable(Color.TRANSPARENT.toDrawable())
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         }
         activePopup = popup
         popup.showAsDropDown(anchor, -(popupWidth - anchor.width), (6 * density).roundToInt())
     }
 
-    @SuppressLint("ClickableViewAccessibility", "SetTextI18n")
+    @SuppressLint("ClickableViewAccessibility")
     private fun buildFastScrollerOverlays(parent: FrameLayout, density: Float) {
         // Floating date bubble / 快速滚动月份年份浮窗
         dateBubbleView = TextView(hostActivity).apply {
@@ -635,14 +664,9 @@ class CustomMediaPickerDialog(
         }
         parent.addView(dateBubbleView)
 
-        // Draggable fast-scroll thumb (▲▼) / 右侧可拖拽快速滚动手柄
+        // Draggable fast-scroll thumb with vector up/down icon / 右侧可拖拽矢量图标快速滚动手柄
         val thumbSize = (38 * density).roundToInt()
-        fastScrollThumb = TextView(hostActivity).apply {
-            text = "▲\n▼"
-            textSize = 9f
-            setLineSpacing(0f, 0.85f)
-            setTextColor(config.theme.iconColor)
-            gravity = Gravity.CENTER
+        fastScrollThumb = FrameLayout(hostActivity).apply {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(config.theme.surfaceColor)
@@ -654,6 +678,12 @@ class CustomMediaPickerDialog(
                     marginEnd = (6 * density).roundToInt()
                     topMargin = (72 * density).roundToInt()
                 }
+            addView(ImageView(hostActivity).apply {
+                setImageResource(R.drawable.xh_ic_fast_scroll)
+                setColorFilter(config.theme.iconColor, PorterDuff.Mode.SRC_IN)
+                val iconPx = (20 * density).roundToInt()
+                layoutParams = FrameLayout.LayoutParams(iconPx, iconPx, Gravity.CENTER)
+            })
         }
 
         fastScrollThumb.setOnTouchListener { _, event ->
@@ -686,8 +716,6 @@ class CustomMediaPickerDialog(
     private fun attachScrollListeners() {
         recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
-                // Auto-expand half-sheet when scrolling downward into the grid.
-                // 向下滚动浏览网格时自动平滑展开至全屏。
                 if (!isExpanded && dy > 16) {
                     animateSheetState(expanded = true)
                 }
@@ -889,12 +917,10 @@ class CustomMediaPickerDialog(
         }
     }
 
-    @SuppressLint("SetTextI18n", "NotifyDataSetChanged")
     private fun selectAlbum(album: MediaAlbum) {
         currentAlbumId = album.id
         currentItems = itemsByAlbum[album.id].orEmpty()
-        albumTitleButton.text =
-            "${if (album.isAllMedia) config.strings.galleryTitle else album.name} ▾"
+        albumTitleText.text = if (album.isAllMedia) config.strings.galleryTitle else album.name
         if (currentItems.isEmpty() && !hasHeroCameraHeader()) {
             recyclerView.visibility = View.GONE
             showEmptyState()
@@ -973,7 +999,6 @@ class CustomMediaPickerDialog(
         toggleSelection(item)
     }
 
-    @SuppressLint("NotifyDataSetChanged", "SetTextI18n")
     private fun refreshSelectionUI() {
         gridAdapter.notifyDataSetChanged()
         val count = selectedItems.size
@@ -1048,7 +1073,8 @@ class CustomMediaPickerDialog(
             container.addView(durView)
         }
 
-        // Top-right selection badge (with enlarged hit target) / 右上角圆形选择角标
+        // Top-right selection badge (vector checkmark for single-select, index for multi-select)
+        // 右上角圆形选择角标（单选显示矢量勾选图标，多选显示有序数字）
         val selIdx = selectedItems.indexOfFirst { it.id == item.id }
         val hitSize = (38 * density).roundToInt()
         val badgeSize = (24 * density).roundToInt()
@@ -1056,24 +1082,38 @@ class CustomMediaPickerDialog(
             layoutParams = FrameLayout.LayoutParams(hitSize, hitSize, Gravity.TOP or Gravity.END)
             setOnClickListener { onBadgeClicked(item) }
         }
-        val badgeView = TextView(hostActivity).apply {
-            textSize = 12f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
+        val badgeCircle = FrameLayout(hostActivity).apply {
             layoutParams =
                 FrameLayout.LayoutParams(badgeSize, badgeSize, Gravity.TOP or Gravity.END).apply {
                     topMargin = (6 * density).roundToInt()
                     marginEnd = (6 * density).roundToInt()
                 }
             if (selIdx >= 0) {
-                text = if (config.multiple) "${selIdx + 1}" else "✓"
-                setTextColor(config.theme.onPrimaryColor)
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
                     setColor(config.theme.primaryColor)
                 }
+                if (config.multiple) {
+                    addView(TextView(hostActivity).apply {
+                        text = "${selIdx + 1}"
+                        textSize = 12f
+                        typeface = Typeface.DEFAULT_BOLD
+                        setTextColor(config.theme.onPrimaryColor)
+                        gravity = Gravity.CENTER
+                        layoutParams = FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                    })
+                } else {
+                    addView(ImageView(hostActivity).apply {
+                        setImageResource(R.drawable.xh_ic_check)
+                        setColorFilter(config.theme.onPrimaryColor, PorterDuff.Mode.SRC_IN)
+                        val iconPx = (15 * density).roundToInt()
+                        layoutParams = FrameLayout.LayoutParams(iconPx, iconPx, Gravity.CENTER)
+                    })
+                }
             } else {
-                text = ""
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
                     setColor(config.theme.unselectedBadgeFillColor)
@@ -1084,7 +1124,7 @@ class CustomMediaPickerDialog(
                 }
             }
         }
-        badgeHitArea.addView(badgeView)
+        badgeHitArea.addView(badgeCircle)
         container.addView(badgeHitArea)
     }
 
@@ -1207,6 +1247,6 @@ class CustomMediaPickerDialog(
         }
     }
 
-    private class CellViewHolder(val container: FrameLayout) :
+    private inner class CellViewHolder(val container: FrameLayout) :
         RecyclerView.ViewHolder(container)
 }

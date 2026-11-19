@@ -110,7 +110,7 @@ final class CustomMediaPreviewViewController: UIViewController,
         view.addSubview(topBar)
 
         let backConfig = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
-        backButton.setImage(UIImage(systemName: "chevron.left", withConfiguration: backConfig), for: .normal)
+        backButton.setImage(UIImage(systemName: "arrow.left", withConfiguration: backConfig), for: .normal)
         backButton.tintColor = .white
         backButton.backgroundColor = UIColor.black.withAlphaComponent(0.35)
         backButton.layer.cornerRadius = 20
@@ -214,13 +214,25 @@ final class CustomMediaPreviewViewController: UIViewController,
         if let idx = ids.firstIndex(of: currentId) {
             selectBadgeButton.backgroundColor = config.theme.primaryColor
             selectBadgeButton.layer.borderWidth = 0
-            selectBadgeButton.setTitleColor(config.theme.onPrimaryColor, for: .normal)
-            selectBadgeButton.setTitle(config.multiple ? "\(idx + 1)" : "✓", for: .normal)
+            if config.multiple {
+                selectBadgeButton.setImage(nil, for: .normal)
+                selectBadgeButton.setTitleColor(config.theme.onPrimaryColor, for: .normal)
+                selectBadgeButton.setTitle("\(idx + 1)", for: .normal)
+            } else {
+                let checkIcon = UIImage(
+                    systemName: "checkmark",
+                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .bold)
+                )
+                selectBadgeButton.setTitle(nil, for: .normal)
+                selectBadgeButton.setImage(checkIcon, for: .normal)
+                selectBadgeButton.tintColor = config.theme.onPrimaryColor
+            }
         } else {
             selectBadgeButton.backgroundColor = config.theme.unselectedBadgeFillColor
             selectBadgeButton.layer.borderWidth = 2
             selectBadgeButton.layer.borderColor = config.theme.unselectedBadgeBorderColor.cgColor
-            selectBadgeButton.setTitle("", for: .normal)
+            selectBadgeButton.setTitle(nil, for: .normal)
+            selectBadgeButton.setImage(nil, for: .normal)
         }
 
         let count = ids.count

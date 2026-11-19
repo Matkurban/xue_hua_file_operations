@@ -1,10 +1,11 @@
 package com.kurban.xue_hua_file_operations.custom_picker
 
-import android.annotation.SuppressLint
 import android.app.Dialog
 import android.content.Context
 import android.graphics.Color
+import android.graphics.PorterDuff
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
@@ -21,19 +22,21 @@ import android.widget.VideoView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.PagerSnapHelper
 import androidx.recyclerview.widget.RecyclerView
-import androidx.core.graphics.drawable.toDrawable
+import com.kurban.xue_hua_file_operations.R
 
 /**
  * Full-screen native media preview dialog supporting horizontal swiping,
  * high-resolution image viewing, inline video playback, and live selection sync.
- * 原生全屏媒体预览弹窗，支持横向滑动切换、高清大图查看、视频内联播放及与网格实时同步的勾选状态。
+ * All toolbar and action icons are rendered using native vector drawables.
+ * 原生全屏媒体预览弹窗，支持横向滑动切换、高清大图查看、视频内联播放及与网格实时同步的勾选状态；
+ * 全部图标均使用原生矢量 Drawable 渲染。
  */
 class CustomMediaPreviewDialog(
     context: Context,
     private val config: CustomMediaPickerConfig,
     private val repository: MediaStoreRepository,
     private val items: List<MediaItem>,
-    initialIndex: Int,
+    private val initialIndex: Int,
     private val selectedItems: MutableList<MediaItem>,
     private val onToggleSelection: (MediaItem) -> Boolean,
     private val onConfirmSelection: () -> Unit,
@@ -44,7 +47,9 @@ class CustomMediaPreviewDialog(
 
     private lateinit var recyclerView: RecyclerView
     private lateinit var counterView: TextView
-    private lateinit var selectBadge: TextView
+    private lateinit var selectBadgeContainer: FrameLayout
+    private lateinit var selectBadgeNumber: TextView
+    private lateinit var selectBadgeCheck: ImageView
     private lateinit var confirmButton: TextView
     private var activeVideoView: VideoView? = null
 
@@ -52,7 +57,7 @@ class CustomMediaPreviewDialog(
         super.onCreate(savedInstanceState)
         requestWindowFeature(Window.FEATURE_NO_TITLE)
         window?.apply {
-            setBackgroundDrawable(Color.BLACK.toDrawable())
+            setBackgroundDrawable(ColorDrawable(Color.BLACK))
             setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         }
 
@@ -102,16 +107,17 @@ class CustomMediaPreviewDialog(
             )
         }
 
-        val backButton = TextView(context).apply {
-            text = "←"
-            textSize = 20f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
+        val backButton = FrameLayout(context).apply {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(0x55000000)
             }
             layoutParams = LinearLayout.LayoutParams(dp(40), dp(40))
+            addView(ImageView(context).apply {
+                setImageResource(R.drawable.xh_ic_arrow_back)
+                setColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN)
+                layoutParams = FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER)
+            })
             setOnClickListener { dismiss() }
         }
         topBar.addView(backButton)
@@ -125,10 +131,7 @@ class CustomMediaPreviewDialog(
         }
         topBar.addView(counterView)
 
-        selectBadge = TextView(context).apply {
-            textSize = 14f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
+        selectBadgeContainer = FrameLayout(context).apply {
             layoutParams = LinearLayout.LayoutParams(dp(32), dp(32))
             setOnClickListener {
                 val item = items.getOrNull(currentIndex) ?: return@setOnClickListener
@@ -137,7 +140,24 @@ class CustomMediaPreviewDialog(
                 }
             }
         }
-        topBar.addView(selectBadge)
+        selectBadgeNumber = TextView(context).apply {
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        }
+        selectBadgeCheck = ImageView(context).apply {
+            setImageResource(R.drawable.xh_ic_check)
+            setColorFilter(config.theme.onPrimaryColor, PorterDuff.Mode.SRC_IN)
+            layoutParams = FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER)
+            visibility = View.GONE
+        }
+        selectBadgeContainer.addView(selectBadgeNumber)
+        selectBadgeContainer.addView(selectBadgeCheck)
+        topBar.addView(selectBadgeContainer)
         root.addView(topBar)
 
         // Bottom confirm bar / 底部确认操作栏
@@ -200,7 +220,6 @@ class CustomMediaPreviewDialog(
         activeVideoView = null
     }
 
-    @SuppressLint("SetTextI18n")
     private fun refreshControls() {
         counterView.text = "${currentIndex + 1} / ${items.size}"
         val currentItem = items.getOrNull(currentIndex)
@@ -212,15 +231,23 @@ class CustomMediaPreviewDialog(
 
         val density = context.resources.displayMetrics.density
         if (selIdx >= 0) {
-            selectBadge.text = if (config.multiple) "${selIdx + 1}" else "✓"
-            selectBadge.setTextColor(config.theme.onPrimaryColor)
-            selectBadge.background = GradientDrawable().apply {
+            selectBadgeContainer.background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(config.theme.primaryColor)
             }
+            if (config.multiple) {
+                selectBadgeCheck.visibility = View.GONE
+                selectBadgeNumber.visibility = View.VISIBLE
+                selectBadgeNumber.text = "${selIdx + 1}"
+                selectBadgeNumber.setTextColor(config.theme.onPrimaryColor)
+            } else {
+                selectBadgeNumber.visibility = View.GONE
+                selectBadgeCheck.visibility = View.VISIBLE
+            }
         } else {
-            selectBadge.text = ""
-            selectBadge.background = GradientDrawable().apply {
+            selectBadgeNumber.visibility = View.GONE
+            selectBadgeCheck.visibility = View.GONE
+            selectBadgeContainer.background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(config.theme.unselectedBadgeFillColor)
                 setStroke((2 * density).toInt(), config.theme.unselectedBadgeBorderColor)
@@ -228,8 +255,7 @@ class CustomMediaPreviewDialog(
         }
 
         val count = selectedItems.size
-        confirmButton.text =
-            if (count > 0) "${config.strings.done} ($count)" else config.strings.done
+        confirmButton.text = if (count > 0) "${config.strings.done} ($count)" else config.strings.done
         confirmButton.alpha = if (count > 0 || !config.multiple) 1f else 0.5f
     }
 
@@ -271,17 +297,20 @@ class CustomMediaPreviewDialog(
             )
         }
 
-        private val playButton = TextView(container.context).apply {
-            text = "▶"
-            textSize = 28f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            val size = (64 * container.resources.displayMetrics.density).toInt()
+        private val playButton = FrameLayout(container.context).apply {
+            val density = container.resources.displayMetrics.density
+            val size = (64 * density).toInt()
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(0x88000000.toInt())
             }
             layoutParams = FrameLayout.LayoutParams(size, size, Gravity.CENTER)
+            addView(ImageView(container.context).apply {
+                setImageResource(R.drawable.xh_ic_play_arrow)
+                setColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN)
+                val iconPx = (34 * density).toInt()
+                layoutParams = FrameLayout.LayoutParams(iconPx, iconPx, Gravity.CENTER)
+            })
             visibility = View.GONE
         }
 

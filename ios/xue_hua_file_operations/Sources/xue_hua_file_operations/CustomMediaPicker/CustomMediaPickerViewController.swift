@@ -330,7 +330,7 @@ final class CustomMediaPickerViewController: UIViewController,
         gridContainer.addSubview(topBar)
 
         let backIcon = UIImage(
-            systemName: "chevron.left",
+            systemName: "arrow.left",
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
         )
         styleFloatingPill(backButton, cornerRadius: 21)
@@ -339,11 +339,20 @@ final class CustomMediaPickerViewController: UIViewController,
         backButton.addTarget(self, action: #selector(handleCancel), for: .touchUpInside)
         topBar.addSubview(backButton)
 
+        // Album dropdown pill with native SF Symbol chevron.down / 带原生 SF Symbol 下拉箭头的相册胶囊按钮
+        let chevronIcon = UIImage(
+            systemName: "chevron.down",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .bold)
+        )
         styleFloatingPill(albumPillButton, cornerRadius: 21)
-        albumPillButton.setTitle("\(config.strings.galleryTitle) ▾", for: .normal)
+        albumPillButton.setTitle(config.strings.galleryTitle, for: .normal)
+        albumPillButton.setImage(chevronIcon, for: .normal)
+        albumPillButton.tintColor = config.theme.iconColor
         albumPillButton.setTitleColor(config.theme.textColor, for: .normal)
         albumPillButton.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
-        albumPillButton.contentEdgeInsets = UIEdgeInsets(top: 0, left: 18, bottom: 0, right: 18)
+        albumPillButton.semanticContentAttribute = .forceRightToLeft
+        albumPillButton.imageEdgeInsets = UIEdgeInsets(top: 1, left: 6, bottom: 0, right: -6)
+        albumPillButton.contentEdgeInsets = UIEdgeInsets(top: 0, left: 18, bottom: 0, right: 20)
         albumPillButton.addTarget(self, action: #selector(handleAlbumPillTap), for: .touchUpInside)
         topBar.addSubview(albumPillButton)
 
@@ -540,7 +549,7 @@ final class CustomMediaPickerViewController: UIViewController,
             return
         }
         let title = album.isAllMedia ? config.strings.galleryTitle : album.title
-        albumPillButton.setTitle("\(title) ▾", for: .normal)
+        albumPillButton.setTitle(title, for: .normal)
         if album.count == 0 && !hasHeroCameraSection() {
             showEmptyState()
         } else {
@@ -1059,7 +1068,9 @@ private final class MediaThumbnailCell: UICollectionViewCell {
     private let imageView = UIImageView()
     private let durationLabel = UILabel()
     private let badgeHitButton = UIButton(type: .custom)
+    private let badgeCircle = UIView()
     private let badgeLabel = UILabel()
+    private let badgeCheckIcon = UIImageView()
 
     private var requestId: PHImageRequestID = PHInvalidImageRequestID
     private var assetId: String = ""
@@ -1087,13 +1098,25 @@ private final class MediaThumbnailCell: UICollectionViewCell {
         badgeHitButton.addTarget(self, action: #selector(handleBadgeTap), for: .touchUpInside)
         contentView.addSubview(badgeHitButton)
 
+        badgeCircle.layer.cornerRadius = 12
+        badgeCircle.clipsToBounds = true
+        badgeCircle.isUserInteractionEnabled = false
+        badgeCircle.translatesAutoresizingMaskIntoConstraints = false
+        badgeHitButton.addSubview(badgeCircle)
+
         badgeLabel.font = .systemFont(ofSize: 12, weight: .bold)
         badgeLabel.textAlignment = .center
-        badgeLabel.layer.cornerRadius = 12
-        badgeLabel.clipsToBounds = true
-        badgeLabel.isUserInteractionEnabled = false
         badgeLabel.translatesAutoresizingMaskIntoConstraints = false
-        badgeHitButton.addSubview(badgeLabel)
+        badgeCircle.addSubview(badgeLabel)
+
+        badgeCheckIcon.image = UIImage(
+            systemName: "checkmark",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .bold)
+        )
+        badgeCheckIcon.contentMode = .scaleAspectFit
+        badgeCheckIcon.isHidden = true
+        badgeCheckIcon.translatesAutoresizingMaskIntoConstraints = false
+        badgeCircle.addSubview(badgeCheckIcon)
 
         NSLayoutConstraint.activate([
             imageView.topAnchor.constraint(equalTo: contentView.topAnchor),
@@ -1109,10 +1132,18 @@ private final class MediaThumbnailCell: UICollectionViewCell {
             badgeHitButton.widthAnchor.constraint(equalToConstant: 40),
             badgeHitButton.heightAnchor.constraint(equalToConstant: 40),
 
-            badgeLabel.topAnchor.constraint(equalTo: badgeHitButton.topAnchor, constant: 6),
-            badgeLabel.trailingAnchor.constraint(equalTo: badgeHitButton.trailingAnchor, constant: -6),
-            badgeLabel.widthAnchor.constraint(equalToConstant: 24),
-            badgeLabel.heightAnchor.constraint(equalToConstant: 24),
+            badgeCircle.topAnchor.constraint(equalTo: badgeHitButton.topAnchor, constant: 6),
+            badgeCircle.trailingAnchor.constraint(equalTo: badgeHitButton.trailingAnchor, constant: -6),
+            badgeCircle.widthAnchor.constraint(equalToConstant: 24),
+            badgeCircle.heightAnchor.constraint(equalToConstant: 24),
+
+            badgeLabel.centerXAnchor.constraint(equalTo: badgeCircle.centerXAnchor),
+            badgeLabel.centerYAnchor.constraint(equalTo: badgeCircle.centerYAnchor),
+
+            badgeCheckIcon.centerXAnchor.constraint(equalTo: badgeCircle.centerXAnchor),
+            badgeCheckIcon.centerYAnchor.constraint(equalTo: badgeCircle.centerYAnchor),
+            badgeCheckIcon.widthAnchor.constraint(equalToConstant: 14),
+            badgeCheckIcon.heightAnchor.constraint(equalToConstant: 14),
         ])
     }
 
@@ -1160,15 +1191,24 @@ private final class MediaThumbnailCell: UICollectionViewCell {
         }
 
         if let selIdx = selectionIndex {
-            badgeLabel.text = multiple ? "\(selIdx + 1)" : "✓"
-            badgeLabel.textColor = theme.onPrimaryColor
-            badgeLabel.backgroundColor = theme.primaryColor
-            badgeLabel.layer.borderWidth = 0
+            badgeCircle.backgroundColor = theme.primaryColor
+            badgeCircle.layer.borderWidth = 0
+            if multiple {
+                badgeCheckIcon.isHidden = true
+                badgeLabel.isHidden = false
+                badgeLabel.text = "\(selIdx + 1)"
+                badgeLabel.textColor = theme.onPrimaryColor
+            } else {
+                badgeLabel.isHidden = true
+                badgeCheckIcon.isHidden = false
+                badgeCheckIcon.tintColor = theme.onPrimaryColor
+            }
         } else {
-            badgeLabel.text = ""
-            badgeLabel.backgroundColor = theme.unselectedBadgeFillColor
-            badgeLabel.layer.borderWidth = 1.8
-            badgeLabel.layer.borderColor = theme.unselectedBadgeBorderColor.cgColor
+            badgeLabel.isHidden = true
+            badgeCheckIcon.isHidden = true
+            badgeCircle.backgroundColor = theme.unselectedBadgeFillColor
+            badgeCircle.layer.borderWidth = 1.8
+            badgeCircle.layer.borderColor = theme.unselectedBadgeBorderColor.cgColor
         }
     }
 

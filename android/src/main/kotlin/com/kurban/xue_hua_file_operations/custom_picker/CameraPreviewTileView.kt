@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Matrix
+import android.graphics.PorterDuff
 import android.graphics.SurfaceTexture
 import android.graphics.drawable.GradientDrawable
 import android.hardware.camera2.CameraCaptureSession
@@ -23,15 +24,18 @@ import android.view.Gravity
 import android.view.Surface
 import android.view.TextureView
 import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import com.kurban.xue_hua_file_operations.R
 
 /**
  * Live rear-camera preview tile rendered inside the top-left 1x2 slot of the
- * media grid. Gracefully degrades to a static dark camera button when camera
- * permission is not granted or no camera hardware is available.
+ * media grid. Gracefully degrades to a static dark camera button with a vector
+ * icon when camera permission is not granted or no camera hardware is available.
  * 渲染在媒体网格左上角 1×2 位置的实时后置相机预览格。
- * 当未授予相机权限或设备无摄像头时，自动优雅降级为静态深色拍照入口。
+ * 当未授予相机权限或设备无摄像头时，自动优雅降级为带矢量图标的静态深色拍照入口。
  */
 class CameraPreviewTileView(
     context: Context,
@@ -39,8 +43,8 @@ class CameraPreviewTileView(
 ) : FrameLayout(context) {
 
     private val textureView = TextureView(context)
-    private val badgeView = TextView(context)
-    private val fallbackLabel = TextView(context)
+    private val badgeContainer = FrameLayout(context)
+    private val fallbackContainer = LinearLayout(context)
 
     private var cameraThread: HandlerThread? = null
     private var cameraHandler: Handler? = null
@@ -60,36 +64,60 @@ class CameraPreviewTileView(
         addView(textureView)
 
         val density = resources.displayMetrics.density
-        fallbackLabel.apply {
-            text = "📷\n$cameraLabel"
-            setTextColor(Color.WHITE)
-            textSize = 14f
+
+        // Fallback container with vector camera icon + label
+        // 未授权或无摄像头时的降级视图（矢量相机图标 + 文案）
+        fallbackContainer.apply {
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             layoutParams = LayoutParams(
                 LayoutParams.WRAP_CONTENT,
                 LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER
             )
+            addView(ImageView(context).apply {
+                setImageResource(R.drawable.xh_ic_camera)
+                setColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN)
+                val iconPx = (30 * density).toInt()
+                layoutParams = LinearLayout.LayoutParams(iconPx, iconPx)
+            })
+            addView(TextView(context).apply {
+                text = cameraLabel
+                setTextColor(Color.WHITE)
+                textSize = 13f
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(
+                    LayoutParams.WRAP_CONTENT,
+                    LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = (6 * density).toInt()
+                }
+            })
         }
-        addView(fallbackLabel)
+        addView(fallbackContainer)
 
-        badgeView.apply {
-            text = "📷"
-            textSize = 15f
-            gravity = Gravity.CENTER
-            val bg = GradientDrawable().apply {
+        // Top-right circular camera icon badge shown over live preview
+        // 实时预览画面右上角的圆形矢量相机角标
+        badgeContainer.apply {
+            val badgePx = (32 * density).toInt()
+            val marginPx = (8 * density).toInt()
+            background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(0x55000000)
             }
-            background = bg
-            val badgePx = (32 * density).toInt()
-            val marginPx = (8 * density).toInt()
             layoutParams = LayoutParams(badgePx, badgePx, Gravity.TOP or Gravity.END).apply {
                 topMargin = marginPx
                 marginEnd = marginPx
             }
+            addView(ImageView(context).apply {
+                setImageResource(R.drawable.xh_ic_camera)
+                setColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN)
+                val iconPx = (18 * density).toInt()
+                layoutParams = LayoutParams(iconPx, iconPx, Gravity.CENTER)
+            })
+            visibility = GONE
         }
-        addView(badgeView)
+        addView(badgeContainer)
 
         textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
             override fun onSurfaceTextureAvailable(
@@ -131,12 +159,12 @@ class CameraPreviewTileView(
             Manifest.permission.CAMERA
         ) == PackageManager.PERMISSION_GRANTED
         if (!hasPermission) {
-            fallbackLabel.visibility = VISIBLE
-            badgeView.visibility = GONE
+            fallbackContainer.visibility = VISIBLE
+            badgeContainer.visibility = GONE
             return
         }
-        fallbackLabel.visibility = GONE
-        badgeView.visibility = VISIBLE
+        fallbackContainer.visibility = GONE
+        badgeContainer.visibility = VISIBLE
         if (textureView.isAvailable) {
             openCameraIfPermitted(textureView.width, textureView.height)
         }
@@ -200,8 +228,8 @@ class CameraPreviewTileView(
                 }
             }, cameraHandler)
         } catch (_: Exception) {
-            fallbackLabel.visibility = VISIBLE
-            badgeView.visibility = GONE
+            fallbackContainer.visibility = VISIBLE
+            badgeContainer.visibility = GONE
         }
     }
 
