@@ -1,5 +1,8 @@
 package com.kurban.xue_hua_file_operations.custom_picker
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Dialog
@@ -9,15 +12,20 @@ import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.text.TextUtils
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
+import android.view.WindowManager
+import android.view.animation.DecelerateInterpolator
+import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -25,6 +33,9 @@ import android.widget.PopupWindow
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.kurban.xue_hua_file_operations.R
@@ -33,31 +44,33 @@ import kotlin.math.roundToInt
 
 /**
  * Customizable native sheet-style media picker for Android.
- * Features an expandable half-to-fullscreen sheet container, floating pill top bar,
+ * Features edge-to-edge translucent system bars, fluid open/close/expand animations,
+ * half-sheet to fullscreen transition (with floating pill top bar fading in on expand),
  * album dropdown popover, overflow menu ("Open in other app..."), optional 1x2 live
  * camera preview tile, right-edge fast scroller with floating month-year bubble,
  * full-screen preview dialog, and bottom confirmation bar.
- * All toolbar, menu, badge, and scroller icons use native Android Vector Drawables.
  *
  * Android 端可自定义样式的原生抽屉式媒体选择器。
- * 支持半屏上拉展开至全屏、顶部悬浮胶囊栏、相册下拉浮窗、更多菜单（使用其它应用打开…）、
- * 可配置的左上角 1×2 实时相机预览格、右侧快速滚动与日期浮窗、全屏预览页及底部确认栏；
- * 全部工具栏、菜单、角标与滚轮图标均采用原生 Android Vector Drawable。
+ * 支持沉浸式透明状态栏/导航栏、流畅的弹出/收起/展开动画、半屏到全屏平滑联动
+ * （半屏隐藏悬浮顶栏、上拉全屏后渐显）、相册下拉浮窗、更多菜单（使用其它应用打开…）、
+ * 可配置的左上角 1×2 实时相机预览格、右侧快速滚动与日期浮窗、全屏预览页及底部确认栏。
  */
 class CustomMediaPickerDialog(
     private val hostActivity: Activity,
     private val config: CustomMediaPickerConfig,
-    private val isLimitedAccess: Boolean,
-    private val isPermissionDenied: Boolean,
+    private var isLimitedAccess: Boolean,
+    private var isPermissionDenied: Boolean,
     private val onResult: (List<Uri>?) -> Unit,
     private val onOpenInOtherApp: () -> Unit,
     private val onLaunchCamera: () -> Unit,
     private val onManageLimitedPermission: () -> Unit,
     private val onOpenAppSettings: () -> Unit,
+    private val onRecheckPermission: () -> Pair<Boolean, Boolean>,
 ) : Dialog(hostActivity, android.R.style.Theme_Translucent_NoTitleBar) {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val repository = MediaStoreRepository(hostActivity)
+    private val sheetInterpolator = PathInterpolator(0.22f, 1f, 0.36f, 1f)
 
     private var albums: List<MediaAlbum> = emptyList()
     private var itemsByAlbum: Map<String, List<MediaItem>> = emptyMap()
@@ -66,14 +79,21 @@ class CustomMediaPickerDialog(
     private val selectedItems = ArrayList<MediaItem>()
 
     private var deliveredResult = false
+    private var isDismissing = false
     private var isExpanded = config.initialExpanded
+    private var expansionProgress = if (config.initialExpanded) 1f else 0f
     private var collapsedTopOffsetPx = 0
     private var screenHeightPx = 0
     private var screenWidthPx = 0
     private var cellSizePx = 0
     private var spacingPx = 0
+    private var statusBarHeightPx = 0
+    private var navBarHeightPx = 0
 
+    private lateinit var scrimView: View
     private lateinit var sheetContainer: FrameLayout
+    private lateinit var dragHandleContainer: FrameLayout
+    private lateinit var limitedBanner: LinearLayout
     private lateinit var topBarContainer: FrameLayout
     private lateinit var albumTitleText: TextView
     private lateinit var recyclerView: RecyclerView
@@ -85,6 +105,7 @@ class CustomMediaPickerDialog(
     private lateinit var dateBubbleView: TextView
     private var activeCameraTile: CameraPreviewTileView? = null
     private var activePopup: PopupWindow? = null
+    private var sheetAnimator: ValueAnimator? = null
 
     private val gridAdapter = MediaGridAdapter()
     private val hideDateBubbleRunnable = Runnable {
@@ -96,42 +117,51 @@ class CustomMediaPickerDialog(
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestWindowFeature(Window.FEATURE_NO_TITLE)
-        window?.apply {
-            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-        }
+        configureEdgeToEdgeWindow()
 
         val metrics = hostActivity.resources.displayMetrics
         val density = metrics.density
         screenHeightPx = metrics.heightPixels
         screenWidthPx = metrics.widthPixels
         spacingPx = (config.theme.gridSpacingDp * density).roundToInt()
-        cellSizePx =
-            ((screenWidthPx - spacingPx * (config.crossAxisCount - 1)) / config.crossAxisCount)
-                .coerceAtLeast(1)
-        collapsedTopOffsetPx = (screenHeightPx * 0.38f).roundToInt()
+        cellSizePx = ((screenWidthPx - spacingPx * (config.crossAxisCount - 1)) / config.crossAxisCount)
+            .coerceAtLeast(1)
+        collapsedTopOffsetPx = (screenHeightPx * 0.40f).roundToInt()
 
         val root = FrameLayout(hostActivity).apply {
-            setBackgroundColor(config.theme.scrimColor)
-            setOnClickListener { dismiss() }
+            clipChildren = false
+            clipToPadding = false
         }
 
-        sheetContainer = FrameLayout(hostActivity).apply {
+        // Dimmed backdrop scrim (animated separately from sheet)
+        // 独立控制的背景半透明遮罩层（支持平滑淡入淡出）
+        scrimView = View(hostActivity).apply {
+            setBackgroundColor(config.theme.scrimColor)
+            alpha = 0f
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
-            // Intercept clicks so tapping inside sheet does not dismiss via scrim.
-            // 拦截点击事件，避免点击面板内部时触发背景遮罩关闭。
+            setOnClickListener { dismissAnimated() }
+        }
+        root.addView(scrimView)
+
+        sheetContainer = FrameLayout(hostActivity).apply {
+            clipChildren = false
+            clipToPadding = false
             isClickable = true
             isFocusable = true
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
         }
-        applySheetBackground(expanded = isExpanded)
-        sheetContainer.translationY = if (isExpanded) 0f else collapsedTopOffsetPx.toFloat()
         root.addView(sheetContainer)
 
         val contentColumn = LinearLayout(hostActivity).apply {
             orientation = LinearLayout.VERTICAL
+            clipChildren = false
+            clipToPadding = false
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
@@ -139,18 +169,20 @@ class CustomMediaPickerDialog(
         }
         sheetContainer.addView(contentColumn)
 
-        // Drag handle area / 顶部拖拽手柄区域
-        val handleContainer = buildDragHandleArea(density)
-        contentColumn.addView(handleContainer)
+        // Drag handle area / 顶部拖拽指示条区域
+        dragHandleContainer = buildDragHandleArea(density)
+        contentColumn.addView(dragHandleContainer)
 
-        // Optional limited-access banner (Android 14+ partial photo access)
-        // 可选的部分照片授权顶部提示条（Android 14+）
-        if (isLimitedAccess && !isPermissionDenied) {
-            contentColumn.addView(buildLimitedAccessBanner(density))
-        }
+        // Limited-access banner (Android 14+ partial photo access)
+        // Android 14+ 部分照片授权顶部提示条
+        limitedBanner = buildLimitedAccessBanner(density)
+        limitedBanner.visibility = if (isLimitedAccess && !isPermissionDenied) View.VISIBLE else View.GONE
+        contentColumn.addView(limitedBanner)
 
-        // Media grid container + overlays / 媒体网格与悬浮控件容器
+        // Grid + floating overlays container / 媒体网格与悬浮控件容器
         val gridWrapper = FrameLayout(hostActivity).apply {
+            clipChildren = false
+            clipToPadding = false
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
@@ -170,7 +202,7 @@ class CustomMediaPickerDialog(
             layoutManager = gridLayoutManager
             adapter = gridAdapter
             clipToPadding = false
-            setPadding(0, dp(64), 0, dp(88))
+            overScrollMode = View.OVER_SCROLL_NEVER
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
@@ -183,21 +215,39 @@ class CustomMediaPickerDialog(
         emptyStateContainer = buildEmptyOrDeniedView(density)
         gridWrapper.addView(emptyStateContainer)
 
-        // Floating pill top bar (back, album pill, overflow menu)
-        // 顶部悬浮胶囊操作栏（返回按钮、相册切换胶囊、更多菜单按钮）
+        // Floating pill top bar (fades in smoothly when expanding to fullscreen)
+        // 顶部悬浮胶囊操作栏（半屏时隐藏，上拉展开至全屏时平滑渐显）
         topBarContainer = buildFloatingTopBar(density)
         gridWrapper.addView(topBarContainer)
 
-        // Fast-scroll thumb & floating date bubble on right edge
-        // 右侧快速滚动手柄与月份年份日期浮窗
+        // Fast-scroll thumb & floating date bubble / 右侧快滑手柄与月份年份浮窗
         buildFastScrollerOverlays(gridWrapper, density)
 
         // Bottom confirmation bar / 底部选中确认栏
         bottomConfirmBar = buildBottomConfirmBar(density)
         gridWrapper.addView(bottomConfirmBar)
 
+        // Listen for real system status bar & navigation bar insets
+        // 动态监听系统状态栏与底部导航栏安全区域
+        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            statusBarHeightPx = bars.top
+            navBarHeightPx = bars.bottom
+            applyInsetsAndExpansion(expansionProgress)
+            insets
+        }
+
         setContentView(root)
+        setOnKeyListener { _, keyCode, event ->
+            if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
+                dismissAnimated()
+                true
+            } else {
+                false
+            }
+        }
         setOnDismissListener {
+            sheetAnimator?.cancel()
             activePopup?.dismiss()
             activeCameraTile?.stopPreview()
             repository.release()
@@ -205,6 +255,13 @@ class CustomMediaPickerDialog(
                 deliveredResult = true
                 onResult(null)
             }
+        }
+
+        // Start off-screen and animate smoothly upward / 从屏幕底部平滑弹出
+        sheetContainer.translationY = screenHeightPx.toFloat()
+        applyInsetsAndExpansion(if (isExpanded) 1f else 0f)
+        root.post {
+            animateEntrance()
         }
 
         if (isPermissionDenied) {
@@ -215,25 +272,150 @@ class CustomMediaPickerDialog(
     }
 
     /**
+     * Re-checks media read permissions when the dialog regains focus
+     * (e.g. after returning from Android App Settings).
+     * 弹窗重新获得焦点时（例如从系统设置页返回后）自动重新检查相册权限并刷新列表。
+     */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus || !isShowing) return
+        val (denied, limited) = onRecheckPermission()
+        if (isPermissionDenied && !denied) {
+            isPermissionDenied = false
+            isLimitedAccess = limited
+            limitedBanner.visibility = if (limited) View.VISIBLE else View.GONE
+            emptyStateContainer.visibility = View.GONE
+            recyclerView.visibility = View.VISIBLE
+            loadMediaAsync()
+        } else if (!denied && limited != isLimitedAccess) {
+            isLimitedAccess = limited
+            limitedBanner.visibility = if (limited) View.VISIBLE else View.GONE
+            loadMediaAsync()
+        }
+    }
+
+    /**
      * Reloads media items after the user updates limited photo permissions.
      * 用户在 Android 14+ 部分授权管理后重新加载媒体列表。
      */
     fun reloadMedia() {
         if (!isShowing) return
-        loadMediaAsync()
+        val (denied, limited) = onRecheckPermission()
+        isPermissionDenied = denied
+        isLimitedAccess = limited
+        limitedBanner.visibility = if (limited && !denied) View.VISIBLE else View.GONE
+        if (!denied) {
+            loadMediaAsync()
+        }
     }
 
-    private fun dp(value: Int): Int =
-        (value * hostActivity.resources.displayMetrics.density).roundToInt()
+    private fun configureEdgeToEdgeWindow() {
+        val win = window ?: return
+        win.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        win.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        WindowCompat.setDecorFitsSystemWindows(win, false)
+        win.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+        @Suppress("DEPRECATION")
+        win.statusBarColor = Color.TRANSPARENT
+        @Suppress("DEPRECATION")
+        win.navigationBarColor = Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            win.attributes = win.attributes.apply {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+        val controller = WindowCompat.getInsetsController(win, win.decorView)
+        controller.isAppearanceLightStatusBars = !config.theme.isDark
+        controller.isAppearanceLightNavigationBars = !config.theme.isDark
+    }
 
-    private fun applySheetBackground(expanded: Boolean) {
-        val radius =
-            if (expanded) 0f else config.theme.sheetCornerRadiusDp * hostActivity.resources.displayMetrics.density
+    private fun animateEntrance() {
+        scrimView.animate()
+            .alpha(1f)
+            .setDuration(240)
+            .setInterpolator(DecelerateInterpolator())
+            .start()
+
+        val targetY = if (isExpanded) 0f else collapsedTopOffsetPx.toFloat()
+        sheetContainer.animate()
+            .translationY(targetY)
+            .setDuration(300)
+            .setInterpolator(sheetInterpolator)
+            .start()
+    }
+
+    private fun dismissAnimated(afterDismiss: (() -> Unit)? = null) {
+        if (isDismissing) return
+        isDismissing = true
+        activePopup?.dismiss()
+        sheetAnimator?.cancel()
+
+        scrimView.animate()
+            .alpha(0f)
+            .setDuration(200)
+            .setInterpolator(DecelerateInterpolator())
+            .start()
+
+        sheetContainer.animate()
+            .translationY(screenHeightPx.toFloat())
+            .setDuration(230)
+            .setInterpolator(DecelerateInterpolator())
+            .setListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    super@CustomMediaPickerDialog.dismiss()
+                    afterDismiss?.invoke()
+                }
+            })
+            .start()
+    }
+
+    private fun dp(value: Int): Int = (value * hostActivity.resources.displayMetrics.density).roundToInt()
+
+    private fun applyInsetsAndExpansion(progress: Float) {
+        expansionProgress = progress.coerceIn(0f, 1f)
+        val density = hostActivity.resources.displayMetrics.density
+
+        // Interpolate top corner radius smoothly (rounded in half-sheet -> square in fullscreen)
+        // 平滑插值顶部圆角（半屏圆角 -> 全屏直角）
+        val radius = config.theme.sheetCornerRadiusDp * density * (1f - expansionProgress)
         sheetContainer.background = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             setColor(config.theme.backgroundColor)
             cornerRadii = floatArrayOf(radius, radius, radius, radius, 0f, 0f, 0f, 0f)
         }
+
+        // Drag handle height & alpha shrink smoothly when expanded to fullscreen
+        // 展开至全屏时平滑收缩拖拽条并让出状态栏安全区
+        val handleHeight = ((26 * density) * (1f - expansionProgress)).roundToInt()
+        val handleLp = dragHandleContainer.layoutParams as LinearLayout.LayoutParams
+        handleLp.height = handleHeight
+        dragHandleContainer.layoutParams = handleLp
+        dragHandleContainer.alpha = (1f - expansionProgress * 1.6f).coerceIn(0f, 1f)
+
+        // Floating top bar fades in smoothly as the sheet expands (hidden in half-sheet!)
+        // 顶部悬浮胶囊栏在半屏状态下隐藏，上拉展开过程中平滑渐显
+        val topBarAlpha = if (isPermissionDenied) {
+            1f
+        } else {
+            ((expansionProgress - 0.35f) / 0.65f).coerceIn(0f, 1f)
+        }
+        topBarContainer.alpha = topBarAlpha
+        topBarContainer.visibility = if (topBarAlpha > 0.02f) View.VISIBLE else View.INVISIBLE
+        topBarContainer.translationY = -(1f - topBarAlpha) * (16 * density)
+
+        val topBarTopPad = (statusBarHeightPx * expansionProgress).roundToInt() + dp(10)
+        topBarContainer.setPadding(dp(14), topBarTopPad, dp(14), dp(14))
+
+        // Adjust RecyclerView padding cleanly for both half-sheet and fullscreen
+        // 动态调整网格上下内边距（半屏紧贴顶部圆角，全屏预留悬浮栏空间）
+        val gridTopPad = ((statusBarHeightPx + dp(62)) * expansionProgress).roundToInt()
+        val gridBottomPad = navBarHeightPx + dp(88)
+        recyclerView.setPadding(0, gridTopPad, 0, gridBottomPad)
+
+        // Adjust bottom confirm bar padding for navigation bar inset
+        // 为底部确认栏适配系统底部导航栏安全区
+        bottomConfirmBar.setPadding(dp(16), dp(12), dp(16), dp(16) + navBarHeightPx)
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -241,7 +423,7 @@ class CustomMediaPickerDialog(
         val container = FrameLayout(hostActivity).apply {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                (28 * density).roundToInt()
+                (26 * density).roundToInt()
             )
         }
         val pill = View(hostActivity).apply {
@@ -263,6 +445,7 @@ class CustomMediaPickerDialog(
         container.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    sheetAnimator?.cancel()
                     downRawY = event.rawY
                     startTranslationY = sheetContainer.translationY
                     true
@@ -272,6 +455,8 @@ class CustomMediaPickerDialog(
                     val delta = event.rawY - downRawY
                     val target = (startTranslationY + delta).coerceAtLeast(0f)
                     sheetContainer.translationY = target
+                    val progress = 1f - (target / collapsedTopOffsetPx.coerceAtLeast(1)).coerceIn(0f, 1f)
+                    applyInsetsAndExpansion(progress)
                     true
                 }
 
@@ -279,7 +464,7 @@ class CustomMediaPickerDialog(
                     val currentY = sheetContainer.translationY
                     when {
                         currentY < collapsedTopOffsetPx * 0.55f -> animateSheetState(expanded = true)
-                        currentY > collapsedTopOffsetPx + screenHeightPx * 0.18f -> dismiss()
+                        currentY > collapsedTopOffsetPx + screenHeightPx * 0.16f -> dismissAnimated()
                         else -> animateSheetState(expanded = false)
                     }
                     true
@@ -293,9 +478,22 @@ class CustomMediaPickerDialog(
 
     private fun animateSheetState(expanded: Boolean) {
         isExpanded = expanded
-        applySheetBackground(expanded)
-        val targetY = if (expanded) 0f else collapsedTopOffsetPx.toFloat()
-        sheetContainer.animate().translationY(targetY).setDuration(220).start()
+        sheetAnimator?.cancel()
+        val startY = sheetContainer.translationY
+        val endY = if (expanded) 0f else collapsedTopOffsetPx.toFloat()
+        val startProgress = expansionProgress
+        val endProgress = if (expanded) 1f else 0f
+
+        sheetAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 260
+            interpolator = sheetInterpolator
+            addUpdateListener { anim ->
+                val f = anim.animatedValue as Float
+                sheetContainer.translationY = startY + (endY - startY) * f
+                applyInsetsAndExpansion(startProgress + (endProgress - startProgress) * f)
+            }
+            start()
+        }
     }
 
     private fun buildLimitedAccessBanner(density: Float): LinearLayout {
@@ -303,12 +501,7 @@ class CustomMediaPickerDialog(
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setBackgroundColor(config.theme.surfaceColor)
-            setPadding(
-                (16 * density).roundToInt(),
-                (10 * density).roundToInt(),
-                (16 * density).roundToInt(),
-                (10 * density).roundToInt()
-            )
+            setPadding((16 * density).roundToInt(), (10 * density).roundToInt(), (16 * density).roundToInt(), (10 * density).roundToInt())
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -326,25 +519,27 @@ class CustomMediaPickerDialog(
                 textSize = 13f
                 typeface = Typeface.DEFAULT_BOLD
                 setTextColor(config.theme.primaryColor)
-                setPadding(
-                    (12 * density).roundToInt(),
-                    (4 * density).roundToInt(),
-                    0,
-                    (4 * density).roundToInt()
-                )
+                setPadding((12 * density).roundToInt(), (4 * density).roundToInt(), 0, (4 * density).roundToInt())
                 setOnClickListener { onManageLimitedPermission() }
             })
         }
     }
 
+    private fun makeFloatingSurfaceDrawable(density: Float, isOval: Boolean): GradientDrawable {
+        val strokeColor = if (config.theme.isDark) 0x22FFFFFF else 0x16000000
+        return GradientDrawable().apply {
+            shape = if (isOval) GradientDrawable.OVAL else GradientDrawable.RECTANGLE
+            if (!isOval) cornerRadius = 22 * density
+            setColor(config.theme.surfaceColor)
+            setStroke((1 * density).roundToInt().coerceAtLeast(1), strokeColor)
+        }
+    }
+
     private fun buildFloatingTopBar(density: Float): FrameLayout {
         val bar = FrameLayout(hostActivity).apply {
-            setPadding(
-                (14 * density).roundToInt(),
-                (8 * density).roundToInt(),
-                (14 * density).roundToInt(),
-                (8 * density).roundToInt()
-            )
+            clipChildren = false
+            clipToPadding = false
+            setPadding((14 * density).roundToInt(), (12 * density).roundToInt(), (14 * density).roundToInt(), (14 * density).roundToInt())
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -354,23 +549,19 @@ class CustomMediaPickerDialog(
 
         val btnSize = (42 * density).roundToInt()
         val iconSize = (22 * density).roundToInt()
-        val elevationPx = 6 * density
+        val elevationPx = 5 * density
 
         // Back / close circular vector icon button / 左侧圆形返回矢量图标按钮
         val backBtn = FrameLayout(hostActivity).apply {
             elevation = elevationPx
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(config.theme.surfaceColor)
-            }
-            layoutParams =
-                FrameLayout.LayoutParams(btnSize, btnSize, Gravity.START or Gravity.CENTER_VERTICAL)
+            background = makeFloatingSurfaceDrawable(density, isOval = true)
+            layoutParams = FrameLayout.LayoutParams(btnSize, btnSize, Gravity.START or Gravity.CENTER_VERTICAL)
             addView(ImageView(hostActivity).apply {
                 setImageResource(R.drawable.xh_ic_arrow_back)
                 setColorFilter(config.theme.iconColor, PorterDuff.Mode.SRC_IN)
                 layoutParams = FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER)
             })
-            setOnClickListener { dismiss() }
+            setOnClickListener { dismissAnimated() }
         }
         bar.addView(backBtn)
 
@@ -380,11 +571,7 @@ class CustomMediaPickerDialog(
             gravity = Gravity.CENTER
             elevation = elevationPx
             setPadding((18 * density).roundToInt(), 0, (12 * density).roundToInt(), 0)
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = 22 * density
-                setColor(config.theme.surfaceColor)
-            }
+            background = makeFloatingSurfaceDrawable(density, isOval = false)
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 btnSize,
@@ -424,15 +611,8 @@ class CustomMediaPickerDialog(
         if (config.allowOpenInOtherApp) {
             val moreBtn = FrameLayout(hostActivity).apply {
                 elevation = elevationPx
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(config.theme.surfaceColor)
-                }
-                layoutParams = FrameLayout.LayoutParams(
-                    btnSize,
-                    btnSize,
-                    Gravity.END or Gravity.CENTER_VERTICAL
-                )
+                background = makeFloatingSurfaceDrawable(density, isOval = true)
+                layoutParams = FrameLayout.LayoutParams(btnSize, btnSize, Gravity.END or Gravity.CENTER_VERTICAL)
                 addView(ImageView(hostActivity).apply {
                     setImageResource(R.drawable.xh_ic_more_vert)
                     setColorFilter(config.theme.iconColor, PorterDuff.Mode.SRC_IN)
@@ -460,6 +640,9 @@ class CustomMediaPickerDialog(
                 setColor(config.theme.surfaceColor)
             }
             elevation = 12 * density
+            alpha = 0f
+            scaleX = 0.94f
+            scaleY = 0.94f
         }
 
         val scrollView = ScrollView(hostActivity).apply {
@@ -507,8 +690,7 @@ class CustomMediaPickerDialog(
                 text = album.name
                 textSize = 15f
                 setTextColor(config.theme.textColor)
-                typeface =
-                    if (album.id == currentAlbumId) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                typeface = if (album.id == currentAlbumId) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
                 maxLines = 1
                 ellipsize = TextUtils.TruncateAt.END
                 layoutParams = LinearLayout.LayoutParams(
@@ -542,7 +724,7 @@ class CustomMediaPickerDialog(
             scrollView,
             LinearLayout.LayoutParams(
                 (screenWidthPx * 0.68f).roundToInt(),
-                ViewGroup.LayoutParams.WRAP_CONTENT
+                minOf((albums.size * 58 * density).roundToInt(), maxHeight)
             )
         )
 
@@ -556,16 +738,9 @@ class CustomMediaPickerDialog(
             elevation = 16 * density
             setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         }
-        scrollView.layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            minOf((albums.size * 58 * density).roundToInt(), maxHeight)
-        )
         activePopup = popup
-        popup.showAsDropDown(
-            anchor,
-            -(screenWidthPx * 0.14f).roundToInt(),
-            (6 * density).roundToInt()
-        )
+        popup.showAsDropDown(anchor, -(screenWidthPx * 0.14f).roundToInt(), (6 * density).roundToInt())
+        card.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(160).setInterpolator(DecelerateInterpolator()).start()
     }
 
     private fun showOverflowMenu(anchor: View) {
@@ -574,35 +749,26 @@ class CustomMediaPickerDialog(
 
         val card = LinearLayout(hostActivity).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(
-                (14 * density).roundToInt(),
-                (8 * density).roundToInt(),
-                (16 * density).roundToInt(),
-                (8 * density).roundToInt()
-            )
+            setPadding((14 * density).roundToInt(), (8 * density).roundToInt(), (16 * density).roundToInt(), (8 * density).roundToInt())
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = 16 * density
                 setColor(config.theme.surfaceColor)
             }
             elevation = 12 * density
+            alpha = 0f
+            scaleX = 0.94f
+            scaleY = 0.94f
         }
 
-        // Menu row with vector open-in-new icon + text / 带矢量图标的外部应用打开菜单项
         val itemRow = LinearLayout(hostActivity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(
-                (4 * density).roundToInt(),
-                (10 * density).roundToInt(),
-                (4 * density).roundToInt(),
-                (10 * density).roundToInt()
-            )
+            setPadding((4 * density).roundToInt(), (10 * density).roundToInt(), (4 * density).roundToInt(), (10 * density).roundToInt())
             setOnClickListener {
                 activePopup?.dismiss()
                 deliveredResult = true
-                dismiss()
-                onOpenInOtherApp()
+                dismissAnimated { onOpenInOtherApp() }
             }
         }
         itemRow.addView(ImageView(hostActivity).apply {
@@ -630,21 +796,16 @@ class CustomMediaPickerDialog(
         }
         activePopup = popup
         popup.showAsDropDown(anchor, -(popupWidth - anchor.width), (6 * density).roundToInt())
+        card.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(160).setInterpolator(DecelerateInterpolator()).start()
     }
 
     @SuppressLint("ClickableViewAccessibility")
     private fun buildFastScrollerOverlays(parent: FrameLayout, density: Float) {
-        // Floating date bubble / 快速滚动月份年份浮窗
         dateBubbleView = TextView(hostActivity).apply {
             textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(config.theme.dateBubbleTextColor)
-            setPadding(
-                (14 * density).roundToInt(),
-                (8 * density).roundToInt(),
-                (14 * density).roundToInt(),
-                (8 * density).roundToInt()
-            )
+            setPadding((14 * density).roundToInt(), (8 * density).roundToInt(), (14 * density).roundToInt(), (8 * density).roundToInt())
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = 18 * density
@@ -664,20 +825,15 @@ class CustomMediaPickerDialog(
         }
         parent.addView(dateBubbleView)
 
-        // Draggable fast-scroll thumb with vector up/down icon / 右侧可拖拽矢量图标快速滚动手柄
         val thumbSize = (38 * density).roundToInt()
         fastScrollThumb = FrameLayout(hostActivity).apply {
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(config.theme.surfaceColor)
-            }
+            background = makeFloatingSurfaceDrawable(density, isOval = true)
             elevation = 6 * density
             visibility = View.GONE
-            layoutParams =
-                FrameLayout.LayoutParams(thumbSize, thumbSize, Gravity.TOP or Gravity.END).apply {
-                    marginEnd = (6 * density).roundToInt()
-                    topMargin = (72 * density).roundToInt()
-                }
+            layoutParams = FrameLayout.LayoutParams(thumbSize, thumbSize, Gravity.TOP or Gravity.END).apply {
+                marginEnd = (6 * density).roundToInt()
+                topMargin = (72 * density).roundToInt()
+            }
             addView(ImageView(hostActivity).apply {
                 setImageResource(R.drawable.xh_ic_fast_scroll)
                 setColorFilter(config.theme.iconColor, PorterDuff.Mode.SRC_IN)
@@ -687,16 +843,15 @@ class CustomMediaPickerDialog(
         }
 
         fastScrollThumb.setOnTouchListener { _, event ->
-            val trackTop = (72 * density)
-            val trackBottom = (parent.height - 96 * density).coerceAtLeast(trackTop + 1f)
+            val trackTop = (72 * density) + statusBarHeightPx
+            val trackBottom = (parent.height - 96 * density - navBarHeightPx).coerceAtLeast(trackTop + 1f)
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
                     val parentLoc = IntArray(2)
                     parent.getLocationOnScreen(parentLoc)
                     val localY = (event.rawY - parentLoc[1]).coerceIn(trackTop, trackBottom)
                     val fraction = ((localY - trackTop) / (trackBottom - trackTop)).coerceIn(0f, 1f)
-                    val targetPos =
-                        (fraction * (gridAdapter.itemCount - 1).coerceAtLeast(0)).roundToInt()
+                    val targetPos = (fraction * (gridAdapter.itemCount - 1).coerceAtLeast(0)).roundToInt()
                     recyclerView.scrollToPosition(targetPos)
                     updateFastScrollPosition(fraction, showBubble = true)
                     true
@@ -716,22 +871,16 @@ class CustomMediaPickerDialog(
     private fun attachScrollListeners() {
         recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
-                if (!isExpanded && dy > 16) {
+                if (!isExpanded && dy > 12) {
                     animateSheetState(expanded = true)
                 }
-                val range =
-                    (rv.computeVerticalScrollRange() - rv.computeVerticalScrollExtent()).coerceAtLeast(
-                        1
-                    )
+                val range = (rv.computeVerticalScrollRange() - rv.computeVerticalScrollExtent()).coerceAtLeast(1)
                 val offset = rv.computeVerticalScrollOffset()
                 val fraction = (offset.toFloat() / range.toFloat()).coerceIn(0f, 1f)
                 val showThumb = currentItems.size > config.crossAxisCount * 5
                 fastScrollThumb.visibility = if (showThumb) View.VISIBLE else View.GONE
                 if (showThumb) {
-                    updateFastScrollPosition(
-                        fraction,
-                        showBubble = rv.scrollState != RecyclerView.SCROLL_STATE_IDLE
-                    )
+                    updateFastScrollPosition(fraction, showBubble = rv.scrollState != RecyclerView.SCROLL_STATE_IDLE)
                 }
             }
 
@@ -746,18 +895,15 @@ class CustomMediaPickerDialog(
     private fun updateFastScrollPosition(fraction: Float, showBubble: Boolean) {
         val density = hostActivity.resources.displayMetrics.density
         val parentHeight = (fastScrollThumb.parent as? View)?.height ?: return
-        val trackTop = 72 * density
-        val trackBottom = (parentHeight - 104 * density).coerceAtLeast(trackTop + 1f)
+        val trackTop = 72 * density + statusBarHeightPx
+        val trackBottom = (parentHeight - 104 * density - navBarHeightPx).coerceAtLeast(trackTop + 1f)
         val y = trackTop + fraction * (trackBottom - trackTop)
-        fastScrollThumb.translationY = y - trackTop
-        dateBubbleView.translationY = y - trackTop
+        fastScrollThumb.translationY = y - (72 * density)
+        dateBubbleView.translationY = y - (72 * density)
 
         val lm = recyclerView.layoutManager as? GridLayoutManager ?: return
         val firstVisible = lm.findFirstVisibleItemPosition().coerceAtLeast(0)
-        val itemIndex = adapterPositionToItemIndex(firstVisible).coerceIn(
-            0,
-            (currentItems.size - 1).coerceAtLeast(0)
-        )
+        val itemIndex = adapterPositionToItemIndex(firstVisible).coerceIn(0, (currentItems.size - 1).coerceAtLeast(0))
         val item = currentItems.getOrNull(itemIndex)
         if (showBubble && item != null) {
             val label = MediaStoreRepository.formatMonthYear(item.dateAddedSec)
@@ -781,13 +927,10 @@ class CustomMediaPickerDialog(
         val bar = FrameLayout(hostActivity).apply {
             setBackgroundColor(config.theme.surfaceColor)
             elevation = 10 * density
-            setPadding(
-                (16 * density).roundToInt(),
-                (12 * density).roundToInt(),
-                (16 * density).roundToInt(),
-                (16 * density).roundToInt()
-            )
+            setPadding((16 * density).roundToInt(), (12 * density).roundToInt(), (16 * density).roundToInt(), (16 * density).roundToInt())
             visibility = View.GONE
+            alpha = 0f
+            translationY = 48 * density
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -811,12 +954,7 @@ class CustomMediaPickerDialog(
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(config.theme.onPrimaryColor)
             gravity = Gravity.CENTER
-            setPadding(
-                (22 * density).roundToInt(),
-                (10 * density).roundToInt(),
-                (22 * density).roundToInt(),
-                (10 * density).roundToInt()
-            )
+            setPadding((22 * density).roundToInt(), (10 * density).roundToInt(), (22 * density).roundToInt(), (10 * density).roundToInt())
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = 22 * density
@@ -851,6 +989,7 @@ class CustomMediaPickerDialog(
         emptyStateContainer.removeAllViews()
         emptyStateContainer.visibility = View.VISIBLE
         recyclerView.visibility = View.GONE
+        applyInsetsAndExpansion(expansionProgress)
 
         emptyStateContainer.addView(TextView(hostActivity).apply {
             text = config.strings.permissionDeniedMessage
@@ -864,22 +1003,17 @@ class CustomMediaPickerDialog(
             textSize = 15f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(config.theme.onPrimaryColor)
-            setPadding(
-                (20 * density).roundToInt(),
-                (10 * density).roundToInt(),
-                (20 * density).roundToInt(),
-                (10 * density).roundToInt()
-            )
+            setPadding((22 * density).roundToInt(), (11 * density).roundToInt(), (22 * density).roundToInt(), (11 * density).roundToInt())
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
-                cornerRadius = 20 * density
+                cornerRadius = 22 * density
                 setColor(config.theme.primaryColor)
             }
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                topMargin = (16 * density).roundToInt()
+                topMargin = (18 * density).roundToInt()
             }
             setOnClickListener { onOpenAppSettings() }
         })
@@ -898,16 +1032,12 @@ class CustomMediaPickerDialog(
 
     private fun loadMediaAsync() {
         thread {
-            val (loadedAlbums, loadedMap) = repository.loadMediaAndAlbums(
-                config.mediaType,
-                config.strings
-            )
+            val (loadedAlbums, loadedMap) = repository.loadMediaAndAlbums(config.mediaType, config.strings)
             mainHandler.post {
                 if (!isShowing) return@post
                 albums = loadedAlbums
                 itemsByAlbum = loadedMap
-                val targetAlbum =
-                    albums.firstOrNull { it.id == currentAlbumId } ?: albums.firstOrNull()
+                val targetAlbum = albums.firstOrNull { it.id == currentAlbumId } ?: albums.firstOrNull()
                 if (targetAlbum != null) {
                     selectAlbum(targetAlbum)
                 } else {
@@ -1002,13 +1132,22 @@ class CustomMediaPickerDialog(
     private fun refreshSelectionUI() {
         gridAdapter.notifyDataSetChanged()
         val count = selectedItems.size
+        val density = hostActivity.resources.displayMetrics.density
         if (count > 0) {
-            bottomConfirmBar.visibility = View.VISIBLE
             val limitSuffix = config.maxFiles?.let { " / $it" } ?: ""
             selectedHintView.text = "$count$limitSuffix"
             confirmButton.text = "${config.strings.done} ($count)"
-        } else {
-            bottomConfirmBar.visibility = View.GONE
+            if (bottomConfirmBar.visibility != View.VISIBLE) {
+                bottomConfirmBar.visibility = View.VISIBLE
+                bottomConfirmBar.animate().alpha(1f).translationY(0f).setDuration(180).start()
+            }
+        } else if (bottomConfirmBar.visibility == View.VISIBLE) {
+            bottomConfirmBar.animate()
+                .alpha(0f)
+                .translationY(48 * density)
+                .setDuration(160)
+                .withEndAction { bottomConfirmBar.visibility = View.GONE }
+                .start()
         }
     }
 
@@ -1016,8 +1155,7 @@ class CustomMediaPickerDialog(
         if (selectedItems.isEmpty()) return
         val uris = selectedItems.map { it.uri }
         deliveredResult = true
-        dismiss()
-        onResult(uris)
+        dismissAnimated { onResult(uris) }
     }
 
     private fun bindMediaTile(container: FrameLayout, item: MediaItem, itemIndex: Int) {
@@ -1044,18 +1182,12 @@ class CustomMediaPickerDialog(
             }
         }
 
-        // Video duration badge in bottom-left / 视频左下角时长标签
         if (item.isVideo) {
             val durView = TextView(hostActivity).apply {
                 text = MediaStoreRepository.formatDuration(item.durationMs)
                 textSize = 11f
                 setTextColor(Color.WHITE)
-                setPadding(
-                    (6 * density).roundToInt(),
-                    (2 * density).roundToInt(),
-                    (6 * density).roundToInt(),
-                    (2 * density).roundToInt()
-                )
+                setPadding((6 * density).roundToInt(), (2 * density).roundToInt(), (6 * density).roundToInt(), (2 * density).roundToInt())
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.RECTANGLE
                     cornerRadius = 6 * density
@@ -1073,8 +1205,6 @@ class CustomMediaPickerDialog(
             container.addView(durView)
         }
 
-        // Top-right selection badge (vector checkmark for single-select, index for multi-select)
-        // 右上角圆形选择角标（单选显示矢量勾选图标，多选显示有序数字）
         val selIdx = selectedItems.indexOfFirst { it.id == item.id }
         val hitSize = (38 * density).roundToInt()
         val badgeSize = (24 * density).roundToInt()
@@ -1083,11 +1213,10 @@ class CustomMediaPickerDialog(
             setOnClickListener { onBadgeClicked(item) }
         }
         val badgeCircle = FrameLayout(hostActivity).apply {
-            layoutParams =
-                FrameLayout.LayoutParams(badgeSize, badgeSize, Gravity.TOP or Gravity.END).apply {
-                    topMargin = (6 * density).roundToInt()
-                    marginEnd = (6 * density).roundToInt()
-                }
+            layoutParams = FrameLayout.LayoutParams(badgeSize, badgeSize, Gravity.TOP or Gravity.END).apply {
+                topMargin = (6 * density).roundToInt()
+                marginEnd = (6 * density).roundToInt()
+            }
             if (selIdx >= 0) {
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
@@ -1117,10 +1246,7 @@ class CustomMediaPickerDialog(
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
                     setColor(config.theme.unselectedBadgeFillColor)
-                    setStroke(
-                        (1.8f * density).roundToInt(),
-                        config.theme.unselectedBadgeBorderColor
-                    )
+                    setStroke((1.8f * density).roundToInt(), config.theme.unselectedBadgeBorderColor)
                 }
             }
         }
@@ -1173,8 +1299,7 @@ class CustomMediaPickerDialog(
             } else if (holder is CellViewHolder) {
                 val itemIdx = adapterPositionToItemIndex(position)
                 val item = currentItems.getOrNull(itemIdx) ?: return
-                val col =
-                    (if (hasHeroCameraHeader()) position - 1 else position) % config.crossAxisCount
+                val col = (if (hasHeroCameraHeader()) position - 1 else position) % config.crossAxisCount
                 val lp = holder.container.layoutParams as RecyclerView.LayoutParams
                 lp.marginEnd = if (col < config.crossAxisCount - 1) spacingPx else 0
                 holder.container.layoutParams = lp
@@ -1183,12 +1308,7 @@ class CustomMediaPickerDialog(
         }
     }
 
-    /**
-     * Hero header row containing the 1x2 live camera preview tile on the left and
-     * a 2-row media mini-grid on the right, matching the staggered grid layout.
-     * 首行复合容器：左侧为跨 2 行的实时相机预览格，右侧为 2 行媒体缩略图网格。
-     */
-    private inner class HeroViewHolder(root: LinearLayout) :
+    private inner class HeroViewHolder(private val root: LinearLayout) :
         RecyclerView.ViewHolder(root) {
 
         private val cameraTile = CameraPreviewTileView(hostActivity).apply {
@@ -1205,8 +1325,7 @@ class CustomMediaPickerDialog(
             }
             cameraTile.setOnClickListener {
                 deliveredResult = true
-                dismiss()
-                onLaunchCamera()
+                dismissAnimated { onLaunchCamera() }
             }
             root.addView(cameraTile)
 
@@ -1232,11 +1351,9 @@ class CustomMediaPickerDialog(
                 for (c in 0 until rightCols) {
                     val idx = r * rightCols + c
                     val slot = FrameLayout(hostActivity).apply {
-                        layoutParams =
-                            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
-                                .apply {
-                                    if (c < rightCols - 1) marginEnd = spacingPx
-                                }
+                        layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
+                            if (c < rightCols - 1) marginEnd = spacingPx
+                        }
                     }
                     val item = currentItems.getOrNull(idx)
                     if (item != null) {
@@ -1249,6 +1366,6 @@ class CustomMediaPickerDialog(
         }
     }
 
-    private class CellViewHolder(val container: FrameLayout) :
+    private inner class CellViewHolder(val container: FrameLayout) :
         RecyclerView.ViewHolder(container)
 }

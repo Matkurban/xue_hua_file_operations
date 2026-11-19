@@ -91,7 +91,16 @@ dart run skills@ get --all
 
 ### Android
 
-**权限（选择 / 另存为 / 打开）：** 不需要危险级存储权限（如 `READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE` / 媒体权限）。这些 API 使用系统文档选择器（SAF）。
+**权限（选择 / 另存为 / 打开）：** 默认 `MediaPickerMode.system` 不需要危险级存储或媒体权限（直接走系统 Photo Picker / SAF）。
+
+**权限（`MediaPickerMode.custom`）：** 若在 Android 端启用自定义原生媒体选择器，请在宿主 App 的 `AndroidManifest.xml` 中声明媒体读取权限（若需实时相机预览格还需声明 `CAMERA`）：
+
+```xml
+<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+<uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+<uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+<uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+```
 
 **权限（`saveToGallery`）：**
 

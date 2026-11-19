@@ -532,6 +532,10 @@ class XueHuaFileOperationsPlugin :
                 } catch (_: ActivityNotFoundException) {
                 }
             },
+            onRecheckPermission = {
+                val latest = mediaReadAccess(act, mediaType)
+                (latest == MediaReadAccess.DENIED) to (latest == MediaReadAccess.LIMITED)
+            },
         )
         activeCustomPickerDialog = dialog
         dialog.show()

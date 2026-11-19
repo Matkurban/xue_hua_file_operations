@@ -18,7 +18,7 @@ final class CustomMediaPickerViewController: UIViewController,
     PHPhotoLibraryChangeObserver
 {
     private let config: CustomMediaPickerConfig
-    private let authStatus: PHAuthorizationStatus
+    private var authStatus: PHAuthorizationStatus
     private let onComplete: ([PHAsset]?) -> Void
     private let onOpenInOtherApp: () -> Void
     private let onLaunchCamera: () -> Void
@@ -30,6 +30,7 @@ final class CustomMediaPickerViewController: UIViewController,
     private var selectedAssetsById: [String: PHAsset] = [:]
 
     private var isExpanded: Bool
+    private var hasAnimatedEntrance = false
     private var collapsedTopOffset: CGFloat = 0
     private var sheetTopConstraint: NSLayoutConstraint!
     private var deliveredResult = false
@@ -86,12 +87,13 @@ final class CustomMediaPickerViewController: UIViewController,
 
     deinit {
         PHPhotoLibrary.shared().unregisterChangeObserver(self)
+        NotificationCenter.default.removeObserver(self)
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .clear
-        collapsedTopOffset = UIScreen.main.bounds.height * 0.36
+        collapsedTopOffset = UIScreen.main.bounds.height * 0.40
 
         setupScrimAndSheet()
         setupDragHandle()
@@ -101,6 +103,14 @@ final class CustomMediaPickerViewController: UIViewController,
         setupFastScroller()
         setupBottomBar()
         setupEmptyOrDeniedState()
+        applyExpansionVisuals(progress: isExpanded ? 1.0 : 0.0)
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
 
         if authStatus == .authorized || authStatus == .limited {
             PHPhotoLibrary.shared().register(self)
@@ -110,15 +120,45 @@ final class CustomMediaPickerViewController: UIViewController,
         }
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard !hasAnimatedEntrance else { return }
+        hasAnimatedEntrance = true
+        sheetTopConstraint.constant = isExpanded ? 0 : collapsedTopOffset
+        UIView.animate(
+            withDuration: 0.32,
+            delay: 0,
+            usingSpringWithDamping: 0.88,
+            initialSpringVelocity: 0.4,
+            options: [.curveEaseOut]
+        ) {
+            self.scrimView.alpha = 1.0
+            self.view.layoutIfNeeded()
+        }
+    }
+
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         stopVisibleCameraCells()
+    }
+
+    @objc private func handleAppDidBecomeActive() {
+        let latest = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        if (authStatus != .authorized && authStatus != .limited) && (latest == .authorized || latest == .limited) {
+            authStatus = latest
+            PHPhotoLibrary.shared().register(self)
+            emptyStateStack.isHidden = true
+            collectionView.isHidden = false
+            applyExpansionVisuals(progress: isExpanded ? 1.0 : 0.0)
+            loadAlbumsAsync()
+        }
     }
 
     // MARK: - Layout Setup / 界面布局构建
 
     private func setupScrimAndSheet() {
         scrimView.backgroundColor = config.theme.scrimColor
+        scrimView.alpha = 0
         scrimView.translatesAutoresizingMaskIntoConstraints = false
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleCancel))
         scrimView.addGestureRecognizer(tap)
@@ -131,9 +171,10 @@ final class CustomMediaPickerViewController: UIViewController,
         sheetContainer.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(sheetContainer)
 
+        // Start off-screen for smooth slide-up entrance / 初始置于屏幕底部以便平滑滑入
         sheetTopConstraint = sheetContainer.topAnchor.constraint(
             equalTo: view.topAnchor,
-            constant: isExpanded ? 0 : collapsedTopOffset
+            constant: UIScreen.main.bounds.height
         )
 
         NSLayoutConstraint.activate([
@@ -599,11 +640,21 @@ final class CustomMediaPickerViewController: UIViewController,
 
     // MARK: - Actions & Gestures / 交互与手势
 
+    private func dismissAnimated(completion: @escaping () -> Void) {
+        stopVisibleCameraCells()
+        sheetTopConstraint.constant = UIScreen.main.bounds.height
+        UIView.animate(withDuration: 0.24, delay: 0, options: [.curveEaseIn], animations: {
+            self.scrimView.alpha = 0
+            self.view.layoutIfNeeded()
+        }, completion: { _ in
+            self.dismiss(animated: false, completion: completion)
+        })
+    }
+
     @objc private func handleCancel() {
         guard !deliveredResult else { return }
         deliveredResult = true
-        stopVisibleCameraCells()
-        dismiss(animated: true) {
+        dismissAnimated {
             self.onComplete(nil)
         }
     }
@@ -618,17 +669,31 @@ final class CustomMediaPickerViewController: UIViewController,
         }
     }
 
+    private func applyExpansionVisuals(progress: CGFloat) {
+        let p = min(max(progress, 0), 1)
+        sheetContainer.layer.cornerRadius = config.theme.sheetCornerRadius * (1 - p)
+        dragHandlePill.alpha = max(0, 1 - p * 1.6)
+        let isDenied = authStatus != .authorized && authStatus != .limited
+        let topBarAlpha: CGFloat = isDenied ? 1.0 : min(max((p - 0.35) / 0.65, 0), 1)
+        topBar.alpha = topBarAlpha
+        topBar.isUserInteractionEnabled = topBarAlpha > 0.1
+        collectionView.contentInset = UIEdgeInsets(top: 62 * p, left: 0, bottom: 92, right: 0)
+    }
+
     @objc private func handleSheetPan(_ gesture: UIPanGestureRecognizer) {
         let translation = gesture.translation(in: view)
         let baseOffset: CGFloat = isExpanded ? 0 : collapsedTopOffset
         switch gesture.state {
         case .changed:
-            sheetTopConstraint.constant = max(0, baseOffset + translation.y)
+            let y = max(0, baseOffset + translation.y)
+            sheetTopConstraint.constant = y
+            let progress = 1.0 - min(max(y / max(collapsedTopOffset, 1), 0), 1)
+            applyExpansionVisuals(progress: progress)
         case .ended, .cancelled:
             let currentY = sheetTopConstraint.constant
             if currentY < collapsedTopOffset * 0.55 {
                 animateSheet(expanded: true)
-            } else if currentY > collapsedTopOffset + view.bounds.height * 0.18 {
+            } else if currentY > collapsedTopOffset + view.bounds.height * 0.16 {
                 handleCancel()
             } else {
                 animateSheet(expanded: false)
@@ -641,8 +706,14 @@ final class CustomMediaPickerViewController: UIViewController,
     private func animateSheet(expanded: Bool) {
         isExpanded = expanded
         sheetTopConstraint.constant = expanded ? 0 : collapsedTopOffset
-        UIView.animate(withDuration: 0.24, delay: 0, options: [.curveEaseOut]) {
-            self.sheetContainer.layer.cornerRadius = expanded ? 0 : self.config.theme.sheetCornerRadius
+        UIView.animate(
+            withDuration: 0.28,
+            delay: 0,
+            usingSpringWithDamping: 0.9,
+            initialSpringVelocity: 0.3,
+            options: [.curveEaseOut]
+        ) {
+            self.applyExpansionVisuals(progress: expanded ? 1.0 : 0.0)
             self.view.layoutIfNeeded()
         }
     }

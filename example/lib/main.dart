@@ -371,6 +371,7 @@ class _FileOperationsDemoPageState extends State<FileOperationsDemoPage> {
           ),
           const SizedBox(height: 8),
           SegmentedButton<FileType>(
+            showSelectedIcon: false,
             segments: const [
               ButtonSegment(value: FileType.any, label: Text('any')),
               ButtonSegment(value: FileType.media, label: Text('media')),

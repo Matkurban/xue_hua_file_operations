@@ -91,7 +91,16 @@ See [Ship skills with packages](https://dart.dev/tools/pub/package-skills).
 
 ### Android
 
-**Permissions for pick / save-as / open:** No dangerous storage permissions (`READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE` / media permissions) are required. Those APIs use the system document picker (SAF).
+**Permissions for pick / save-as / open:** No dangerous storage permissions (`READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE` / media permissions) are required for `MediaPickerMode.system` (default), which uses the system Photo Picker / SAF.
+
+**Permissions for `MediaPickerMode.custom`:** If you enable the customizable native sheet picker on Android, declare the read-media permissions in your host `AndroidManifest.xml` (plus `CAMERA` if you want the live camera preview tile):
+
+```xml
+<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+<uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+<uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+<uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+```
 
 **Permissions for `saveToGallery`:**
 
