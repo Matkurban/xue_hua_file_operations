@@ -102,11 +102,26 @@ final class CustomMediaPreviewViewController: UIViewController,
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        if !hasScrolledToInitial, assets.count > 0 {
-            hasScrolledToInitial = true
-            let indexPath = IndexPath(item: currentIndex, section: 0)
-            collectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: false)
-        }
+        // Wait until collectionView has a valid non-zero width, force layout so
+        // contentSize is ready, then jump directly via contentOffset. This avoids
+        // the iOS 14+ UIKit bug where `scrollToItem` fails silently when
+        // `isPagingEnabled == true`.
+        // 等待 collectionView 获得有效宽度并完成内容尺寸布局后，直接通过 contentOffset
+        // 精确定位到目标索引，彻底规避 iOS 14+ 在开启分页时 scrollToItem 静默失效停在第 1 张的问题。
+        guard !hasScrolledToInitial, assets.count > 0 else { return }
+        contentContainer.layoutIfNeeded()
+        guard collectionView.bounds.width > 0 else { return }
+        hasScrolledToInitial = true
+        collectionView.collectionViewLayout.invalidateLayout()
+        collectionView.layoutIfNeeded()
+        scrollToPage(currentIndex, animated: false)
+    }
+
+    private func scrollToPage(_ index: Int, animated: Bool) {
+        let pageWidth = collectionView.bounds.width
+        guard pageWidth > 0, index >= 0, index < assets.count else { return }
+        let targetX = CGFloat(index) * pageWidth
+        collectionView.setContentOffset(CGPoint(x: targetX, y: 0), animated: animated)
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -498,11 +513,7 @@ final class CustomMediaPreviewViewController: UIViewController,
                 if i != currentIndex {
                     stopActiveVideo()
                     currentIndex = i
-                    self.collectionView.scrollToItem(
-                        at: IndexPath(item: i, section: 0),
-                        at: .centeredHorizontally,
-                        animated: true
-                    )
+                    self.scrollToPage(i, animated: true)
                     refreshControls()
                 }
                 break
@@ -656,6 +667,7 @@ private final class PreviewAssetCell: UICollectionViewCell, UIScrollViewDelegate
     private let imageView = UIImageView()
     private let playButton = UIButton(type: .system)
     private var requestId: PHImageRequestID = PHInvalidImageRequestID
+    private var assetId: String = ""
     private var onSingleTap: (() -> Void)?
     private var onPlay: (() -> Void)?
 
@@ -722,6 +734,7 @@ private final class PreviewAssetCell: UICollectionViewCell, UIScrollViewDelegate
             PHImageManager.default().cancelImageRequest(requestId)
             requestId = PHInvalidImageRequestID
         }
+        assetId = ""
         scrollView.setZoomScale(1.0, animated: false)
         imageView.image = nil
         playButton.isHidden = true
@@ -739,9 +752,16 @@ private final class PreviewAssetCell: UICollectionViewCell, UIScrollViewDelegate
         onSingleTap: @escaping () -> Void,
         onPlay: @escaping () -> Void
     ) {
+        if requestId != PHInvalidImageRequestID {
+            PHImageManager.default().cancelImageRequest(requestId)
+            requestId = PHInvalidImageRequestID
+        }
+        let targetAssetId = asset.localIdentifier
+        self.assetId = targetAssetId
         self.onSingleTap = onSingleTap
         self.onPlay = onPlay
         scrollView.setZoomScale(1.0, animated: false)
+        imageView.image = nil
         playButton.isHidden = asset.mediaType != .video
         let scale = UIScreen.main.scale
         let targetSize = CGSize(
@@ -758,7 +778,9 @@ private final class PreviewAssetCell: UICollectionViewCell, UIScrollViewDelegate
             options: options
         ) { [weak self] image, _ in
             DispatchQueue.main.async {
-                if let image = image {
+                // Guard against stale async callbacks after cell reuse.
+                // 校验资产 ID，防止单元格复用后旧异步回调覆盖当前预览图。
+                if self?.assetId == targetAssetId, let image = image {
                     self?.imageView.image = image
                 }
             }
