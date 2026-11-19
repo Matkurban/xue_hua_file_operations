@@ -2,7 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:xue_hua_file_operations/xue_hua_file_operations.dart';
 
-import '../test_env_stub.dart' if (dart.library.io) '../test_env_io.dart'
+import '../test_env_stub.dart'
+    if (dart.library.io) '../test_env_io.dart'
     as test_env;
 
 /// Preset accent color entry for the custom media picker demo.

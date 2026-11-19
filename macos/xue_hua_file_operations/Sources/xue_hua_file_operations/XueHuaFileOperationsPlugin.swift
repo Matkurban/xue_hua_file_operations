@@ -73,7 +73,6 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin {
         value.split(separator: ":", omittingEmptySubsequences: true).map(String.init)
     }
 
-
     private func contentTypes(from args: [String: Any]?) -> [UTType] {
         var types: [UTType] = []
         if let mimes = args?["allowedMimeTypes"] as? [String] {
@@ -132,7 +131,7 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin {
             let hookEnv = multiple ? Self.testPickFilesEnv : Self.testPickFileEnv
             var hook = Self.env(hookEnv)
             // Allow the single-file env for multi when the multi env is unset.
-            if multiple && hook == nil {
+            if multiple, hook == nil {
                 hook = Self.env(Self.testPickFileEnv)
             }
             if let hook {

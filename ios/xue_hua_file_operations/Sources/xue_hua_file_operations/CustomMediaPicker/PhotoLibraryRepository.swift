@@ -13,8 +13,13 @@ struct MediaAlbumItem {
     let isAllMedia: Bool
     let isAllVideos: Bool
 
-    var count: Int { fetchResult.count }
-    var coverAsset: PHAsset? { fetchResult.firstObject }
+    var count: Int {
+        fetchResult.count
+    }
+
+    var coverAsset: PHAsset? {
+        fetchResult.firstObject
+    }
 
     static let allMediaId = "__all_media__"
     static let allVideosId = "__all_videos__"
@@ -24,7 +29,6 @@ struct MediaAlbumItem {
 /// asset export (including iCloud downloads and edited media support).
 /// 负责 PhotoKit 相册查询、缩略图缓存及全异步后台导出（支持 iCloud 与已编辑媒体，绝不阻塞主线程）。
 final class PhotoLibraryRepository {
-
     let imageManager = PHCachingImageManager()
 
     /// Builds virtual ("All Media", "All Videos") and real PhotoKit albums.
@@ -316,7 +320,8 @@ final class PhotoLibraryRepository {
 
                 let resources = PHAssetResource.assetResources(for: asset)
                 guard let resource = resources.first(where: { $0.type == .video || $0.type == .fullSizeVideo })
-                        ?? resources.first else {
+                    ?? resources.first
+                else {
                     let err = (info?[PHImageErrorKey] as? Error) ?? NSError(
                         domain: "xue_hua_file_operations",
                         code: -3,

@@ -2,11 +2,11 @@ import FlutterMacOS
 import Photos
 
 enum GallerySaver {
-    static func permissionStatus(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    static func permissionStatus(call _: FlutterMethodCall, result: @escaping FlutterResult) {
         result(wireName(for: PHPhotoLibrary.authorizationStatus(for: .readWrite)))
     }
 
-    static func requestPermission(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    static func requestPermission(call _: FlutterMethodCall, result: @escaping FlutterResult) {
         requestAccess(.readWrite) { status in
             result(wireName(for: status))
         }
@@ -199,7 +199,7 @@ enum GallerySaver {
         result: @escaping FlutterResult
     ) {
         var localIdentifier: String?
-        PHPhotoLibrary.shared().performChanges({
+        PHPhotoLibrary.shared().performChanges {
             let request: PHAssetChangeRequest?
             if isVideo {
                 request = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: fileURL)
@@ -215,7 +215,7 @@ enum GallerySaver {
             if let albumName = albumName {
                 add(placeholder, toAlbumNamed: albumName, existingAlbum: existingAlbum)
             }
-        }, completionHandler: { success, error in
+        } completionHandler: { success, error in
             if createdTemp {
                 try? FileManager.default.removeItem(at: fileURL)
             }
@@ -238,7 +238,7 @@ enum GallerySaver {
                     "identifier": localIdentifier,
                 ] as [String: Any])
             }
-        })
+        }
     }
 
     private static func flutterError(from error: Error) -> FlutterError {

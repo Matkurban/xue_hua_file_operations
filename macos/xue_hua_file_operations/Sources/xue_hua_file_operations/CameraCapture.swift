@@ -33,7 +33,9 @@ final class CameraCapture: NSObject, AVCapturePhotoCaptureDelegate,
     private let sessionQueue = DispatchQueue(label: "xue_hua_file_operations.camera")
 
     /// `true` while a camera session is on screen.
-    var isBusy: Bool { pendingResult != nil }
+    var isBusy: Bool {
+        pendingResult != nil
+    }
 
     // MARK: - Entry point
 
@@ -220,9 +222,9 @@ final class CameraCapture: NSObject, AVCapturePhotoCaptureDelegate,
     }
 
     func fileOutput(
-        _ output: AVCaptureFileOutput,
-        didStartRecordingTo fileURL: URL,
-        from connections: [AVCaptureConnection]
+        _: AVCaptureFileOutput,
+        didStartRecordingTo _: URL,
+        from _: [AVCaptureConnection]
     ) {
         guard ProcessInfo.processInfo.environment["XUE_HUA_CAMERA_TEST_AUTO"] == "1" else {
             return
@@ -329,7 +331,7 @@ final class CameraCapture: NSObject, AVCapturePhotoCaptureDelegate,
     }
 
     /// Closing the panel with the title-bar button behaves like Cancel.
-    func windowWillClose(_ notification: Notification) {
+    func windowWillClose(_: Notification) {
         cancelCapture()
     }
 
@@ -356,7 +358,7 @@ final class CameraCapture: NSObject, AVCapturePhotoCaptureDelegate,
     }
 
     func photoOutput(
-        _ output: AVCapturePhotoOutput,
+        _: AVCapturePhotoOutput,
         didFinishProcessingPhoto photo: AVCapturePhoto,
         error: Error?
     ) {
@@ -445,9 +447,15 @@ final class CameraCapture: NSObject, AVCapturePhotoCaptureDelegate,
         width: Double, height: Double, maxWidth: Double?, maxHeight: Double?
     ) -> (Double, Double) {
         var factor = 1.0
-        if let maxWidth = maxWidth, maxWidth > 0 { factor = max(factor, width / maxWidth) }
-        if let maxHeight = maxHeight, maxHeight > 0 { factor = max(factor, height / maxHeight) }
-        if factor <= 1 { return (width, height) }
+        if let maxWidth = maxWidth, maxWidth > 0 {
+            factor = max(factor, width / maxWidth)
+        }
+        if let maxHeight = maxHeight, maxHeight > 0 {
+            factor = max(factor, height / maxHeight)
+        }
+        if factor <= 1 {
+            return (width, height)
+        }
         return (max(1, (width / factor).rounded(.down)), max(1, (height / factor).rounded(.down)))
     }
 
@@ -471,9 +479,9 @@ final class CameraCapture: NSObject, AVCapturePhotoCaptureDelegate,
     }
 
     func fileOutput(
-        _ output: AVCaptureFileOutput,
+        _: AVCaptureFileOutput,
         didFinishRecordingTo outputFileURL: URL,
-        from connections: [AVCaptureConnection],
+        from _: [AVCaptureConnection],
         error: Error?
     ) {
         DispatchQueue.main.async { [weak self] in

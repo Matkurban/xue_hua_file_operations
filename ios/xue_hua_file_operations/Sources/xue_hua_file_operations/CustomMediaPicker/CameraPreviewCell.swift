@@ -27,7 +27,8 @@ final class CameraPreviewCell: UICollectionViewCell {
         setupViews()
     }
 
-    required init?(coder: NSCoder) {
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
@@ -108,8 +109,9 @@ final class CameraPreviewCell: UICollectionViewCell {
             }
 
             guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
-                    ?? AVCaptureDevice.default(for: .video),
-                  let input = try? AVCaptureDeviceInput(device: device) else {
+                ?? AVCaptureDevice.default(for: .video),
+                let input = try? AVCaptureDeviceInput(device: device)
+            else {
                 DispatchQueue.main.async { self.showFallback() }
                 return
             }

@@ -1,7 +1,7 @@
 import AVFoundation
 import Flutter
-import UniformTypeIdentifiers
 import UIKit
+import UniformTypeIdentifiers
 
 /// Presents the system camera (`UIImagePickerController`) to take a photo or
 /// record a video and reports the result through a `FlutterResult`.
@@ -22,7 +22,9 @@ final class CameraCapture: NSObject, UIImagePickerControllerDelegate,
     private var request: Request?
 
     /// `true` while a camera session is on screen.
-    var isBusy: Bool { pendingResult != nil }
+    var isBusy: Bool {
+        pendingResult != nil
+    }
 
     func capture(
         call: FlutterMethodCall,
@@ -256,8 +258,12 @@ final class CameraCapture: NSObject, UIImagePickerControllerDelegate,
 
         if maxWidth != nil || maxHeight != nil {
             let aspectRatio = originalWidth / originalHeight
-            if let maxWidth = maxWidth { width = min(maxWidth.rounded(), originalWidth) }
-            if let maxHeight = maxHeight { height = min(maxHeight.rounded(), originalHeight) }
+            if let maxWidth = maxWidth {
+                width = min(maxWidth.rounded(), originalWidth)
+            }
+            if let maxHeight = maxHeight {
+                height = min(maxHeight.rounded(), originalHeight)
+            }
             let downscale = (maxWidth.map { $0 < originalWidth } ?? false)
                 || (maxHeight.map { $0 < originalHeight } ?? false)
             if downscale {

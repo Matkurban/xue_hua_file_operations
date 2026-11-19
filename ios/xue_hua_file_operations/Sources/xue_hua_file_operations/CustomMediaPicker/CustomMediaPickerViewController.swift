@@ -87,7 +87,8 @@ final class CustomMediaPickerViewController: UIViewController,
         modalTransitionStyle = .crossDissolve
     }
 
-    required init?(coder: NSCoder) {
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
@@ -146,7 +147,7 @@ final class CustomMediaPickerViewController: UIViewController,
 
     @objc private func handleAppDidBecomeActive() {
         let latest = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        if (authStatus != .authorized && authStatus != .limited) && (latest == .authorized || latest == .limited) {
+        if authStatus != .authorized, authStatus != .limited, latest == .authorized || latest == .limited {
             authStatus = latest
             PHPhotoLibrary.shared().register(self)
             emptyStateStack.isHidden = true
@@ -623,7 +624,7 @@ final class CustomMediaPickerViewController: UIViewController,
             scrimAlpha = min(max(1.0 - ((clamped - half) / dismissRange), 0), 1)
         }
         scrimView.alpha = scrimAlpha
-        if !bottomBar.isHidden && !selectedAssetIds.isEmpty {
+        if !bottomBar.isHidden, !selectedAssetIds.isEmpty {
             bottomBar.alpha = scrimAlpha
         }
 
@@ -714,7 +715,7 @@ final class CustomMediaPickerViewController: UIViewController,
                 // Half-screen: any vertical swipe moves the sheet 1:1 with finger.
                 // 半屏状态：任意上下滑动均 1:1 跟手移动抽屉。
                 shouldDragSheet = true
-            } else if isGridAtTop && translation.y > 2.0 {
+            } else if isGridAtTop, translation.y > 2.0 {
                 // Full-screen at top of grid: downward swipe smoothly pulls back to half-screen.
                 // 全屏且网格已滑到顶部：向下拉动无缝过渡为下拉抽屉回半屏。
                 shouldDragSheet = true
@@ -750,7 +751,7 @@ final class CustomMediaPickerViewController: UIViewController,
             } else if velocityY > 1800 {
                 handleCancel()
             } else if velocityY > 550 {
-                if panStartedInFullscreen && offset < half * 1.15 {
+                if panStartedInFullscreen, offset < half * 1.15 {
                     animateSheet(toOffset: half)
                 } else {
                     handleCancel()
@@ -787,7 +788,7 @@ final class CustomMediaPickerViewController: UIViewController,
         }
     }
 
-    func photoLibraryDidChange(_ changeInstance: PHChange) {
+    func photoLibraryDidChange(_: PHChange) {
         loadAlbumsAsync()
     }
 
@@ -803,7 +804,7 @@ final class CustomMediaPickerViewController: UIViewController,
         }
         let title = album.isAllMedia ? config.strings.galleryTitle : album.title
         albumPillButton.setTitle(title, for: .normal)
-        if album.count == 0 && !hasHeroCameraSection() {
+        if album.count == 0, !hasHeroCameraSection() {
             showEmptyState()
         } else {
             emptyStateStack.isHidden = true
@@ -839,7 +840,9 @@ final class CustomMediaPickerViewController: UIViewController,
         guard let album = currentAlbum else { return nil }
         if hasHeroCameraSection() {
             if indexPath.section == 0 {
-                if indexPath.item == 0 { return nil }
+                if indexPath.item == 0 {
+                    return nil
+                }
                 let idx = indexPath.item - 1
                 return idx < album.count ? idx : nil
             } else {
@@ -1119,7 +1122,8 @@ final class CustomMediaPickerViewController: UIViewController,
         for cell in collectionView.visibleCells {
             guard let thumbCell = cell as? MediaThumbnailCell,
                   let indexPath = collectionView.indexPath(for: thumbCell),
-                  let idx = assetIndex(for: indexPath) else {
+                  let idx = assetIndex(for: indexPath)
+            else {
                 continue
             }
             let asset = album.fetchResult.object(at: idx)
@@ -1165,11 +1169,11 @@ final class CustomMediaPickerViewController: UIViewController,
 
     // MARK: - UICollectionViewDataSource & Delegate
 
-    func numberOfSections(in collectionView: UICollectionView) -> Int {
+    func numberOfSections(in _: UICollectionView) -> Int {
         hasHeroCameraSection() ? 2 : 1
     }
 
-    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+    func collectionView(_: UICollectionView, numberOfItemsInSection section: Int) -> Int {
         guard let album = currentAlbum else { return 0 }
         if hasHeroCameraSection() {
             if section == 0 {
@@ -1196,9 +1200,9 @@ final class CustomMediaPickerViewController: UIViewController,
         }
 
         guard let cell = collectionView.dequeueReusableCell(
-            withReuseIdentifier: MediaThumbnailCell.reuseId,
-            for: indexPath
-        ) as? MediaThumbnailCell,
+                  withReuseIdentifier: MediaThumbnailCell.reuseId,
+                  for: indexPath
+              ) as? MediaThumbnailCell,
               let album = currentAlbum,
               let idx = assetIndex(for: indexPath)
         else {
@@ -1228,7 +1232,7 @@ final class CustomMediaPickerViewController: UIViewController,
         return cell
     }
 
-    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+    func collectionView(_: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         if hasHeroCameraSection(), indexPath.section == 0, indexPath.item == 0 {
             deliveredResult = true
             dismissAnimated {
@@ -1298,12 +1302,14 @@ final class CustomMediaPickerViewController: UIViewController,
         }
     }
 
-    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+    func scrollViewDidEndDecelerating(_: UIScrollView) {
         scheduleHideDateBubble()
     }
 
-    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-        if !decelerate { scheduleHideDateBubble() }
+    func scrollViewDidEndDragging(_: UIScrollView, willDecelerate decelerate: Bool) {
+        if !decelerate {
+            scheduleHideDateBubble()
+        }
     }
 
     private func updateDateBubble(show: Bool) {
@@ -1425,7 +1431,8 @@ private final class MediaThumbnailCell: UICollectionViewCell {
         ])
     }
 
-    required init?(coder: NSCoder) {
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
@@ -1449,7 +1456,7 @@ private final class MediaThumbnailCell: UICollectionViewCell {
         isDisabled: Bool,
         onBadgeTap: @escaping () -> Void
     ) {
-        self.assetId = asset.localIdentifier
+        assetId = asset.localIdentifier
         self.onBadgeTap = onBadgeTap
 
         let scale = UIScreen.main.scale

@@ -63,7 +63,7 @@ final class CustomMediaPreviewViewController: UIViewController,
         self.config = config
         self.repository = repository
         self.assets = assets
-        self.currentIndex = min(max(0, initialIndex), max(0, assets.count - 1))
+        currentIndex = min(max(0, initialIndex), max(0, assets.count - 1))
         self.selectedIdsProvider = selectedIdsProvider
         self.selectedAssetsProvider = selectedAssetsProvider
         self.onToggleSelection = onToggleSelection
@@ -73,11 +73,14 @@ final class CustomMediaPreviewViewController: UIViewController,
         modalTransitionStyle = .crossDissolve
     }
 
-    required init?(coder: NSCoder) {
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        .lightContent
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -474,7 +477,7 @@ final class CustomMediaPreviewViewController: UIViewController,
 
     // MARK: - UICollectionViewDataSource & Delegate
 
-    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection _: Int) -> Int {
         if collectionView === stripCollectionView {
             return selectedAssetsProvider().count
         }
@@ -530,12 +533,12 @@ final class CustomMediaPreviewViewController: UIViewController,
         let selectedAssets = selectedAssetsProvider()
         guard indexPath.item < selectedAssets.count else { return }
         let targetId = selectedAssets[indexPath.item].localIdentifier
-        for i in 0..<assets.count {
+        for i in 0 ..< assets.count {
             if assets.object(at: i).localIdentifier == targetId {
                 if i != currentIndex {
                     stopActiveVideo()
                     currentIndex = i
-                    self.scrollToPage(i, animated: true)
+                    scrollToPage(i, animated: true)
                     refreshControls()
                 }
                 break
@@ -545,8 +548,8 @@ final class CustomMediaPreviewViewController: UIViewController,
 
     func collectionView(
         _ collectionView: UICollectionView,
-        layout collectionViewLayout: UICollectionViewLayout,
-        sizeForItemAt indexPath: IndexPath
+        layout _: UICollectionViewLayout,
+        sizeForItemAt _: IndexPath
     ) -> CGSize {
         if collectionView === stripCollectionView {
             return CGSize(width: 50, height: 50)
@@ -555,11 +558,15 @@ final class CustomMediaPreviewViewController: UIViewController,
     }
 
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-        if scrollView === collectionView { updateCurrentIndexFromScroll() }
+        if scrollView === collectionView {
+            updateCurrentIndexFromScroll()
+        }
     }
 
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-        if scrollView === collectionView, !decelerate { updateCurrentIndexFromScroll() }
+        if scrollView === collectionView, !decelerate {
+            updateCurrentIndexFromScroll()
+        }
     }
 
     private func updateCurrentIndexFromScroll() {
@@ -621,7 +628,8 @@ private final class SelectedStripCell: UICollectionViewCell {
         ])
     }
 
-    required init?(coder: NSCoder) {
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
@@ -717,7 +725,8 @@ private final class PreviewAssetCell: UICollectionViewCell, UIScrollViewDelegate
         ])
     }
 
-    required init?(coder: NSCoder) {
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
@@ -735,7 +744,7 @@ private final class PreviewAssetCell: UICollectionViewCell, UIScrollViewDelegate
         onPlay = nil
     }
 
-    func viewForZooming(in scrollView: UIScrollView) -> UIView? {
+    func viewForZooming(in _: UIScrollView) -> UIView? {
         imageView
     }
 
@@ -750,7 +759,7 @@ private final class PreviewAssetCell: UICollectionViewCell, UIScrollViewDelegate
             requestId = PHInvalidImageRequestID
         }
         let targetAssetId = asset.localIdentifier
-        self.assetId = targetAssetId
+        assetId = targetAssetId
         self.onSingleTap = onSingleTap
         self.onPlay = onPlay
         scrollView.setZoomScale(1.0, animated: false)

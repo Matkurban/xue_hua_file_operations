@@ -128,8 +128,9 @@ class CustomMediaPickerDialog(
         screenHeightPx = metrics.heightPixels
         screenWidthPx = metrics.widthPixels
         spacingPx = (config.theme.gridSpacingDp * density).roundToInt()
-        cellSizePx = ((screenWidthPx - spacingPx * (config.crossAxisCount - 1)) / config.crossAxisCount)
-            .coerceAtLeast(1)
+        cellSizePx =
+            ((screenWidthPx - spacingPx * (config.crossAxisCount - 1)) / config.crossAxisCount)
+                .coerceAtLeast(1)
         collapsedTopOffsetPx = screenHeightPx * 0.42f
 
         val root = FrameLayout(hostActivity).apply {
@@ -216,7 +217,8 @@ class CustomMediaPickerDialog(
         // Optional limited-access banner (Android 14+ partial photo access)
         // Android 14+ 部分照片授权提示条
         limitedBanner = buildLimitedAccessBanner(density)
-        limitedBanner.visibility = if (isLimitedAccess && !isPermissionDenied) View.VISIBLE else View.GONE
+        limitedBanner.visibility =
+            if (isLimitedAccess && !isPermissionDenied) View.VISIBLE else View.GONE
         sheetContainer.addView(limitedBanner)
 
         // Floating pill top bar (fades in smoothly as sheet approaches fullscreen)
@@ -497,7 +499,8 @@ class CustomMediaPickerDialog(
                     if (abs(dy) > touchSlop && abs(dy) > abs(dx)) {
                         val isHalfOrMid = currentSheetOffsetY > 2f
                         val isGridAtTop = !recyclerView.canScrollVertically(-1)
-                        val isInTopArea = (downY - currentSheetOffsetY) < (statusBarHeightPx + dp(72))
+                        val isInTopArea =
+                            (downY - currentSheetOffsetY) < (statusBarHeightPx + dp(72))
                         // Intercept in half-sheet for any vertical drag, or in fullscreen
                         // when pulling downward at the top of the grid (or top bar area).
                         // 半屏态拦截任意上下滑动；全屏态当列表已到顶或从顶栏下滑时无缝接管下拉。
@@ -587,7 +590,8 @@ class CustomMediaPickerDialog(
         }
     }
 
-    private fun dp(value: Int): Int = (value * hostActivity.resources.displayMetrics.density).roundToInt()
+    private fun dp(value: Int): Int =
+        (value * hostActivity.resources.displayMetrics.density).roundToInt()
 
     private fun buildLimitedAccessBanner(density: Float): LinearLayout {
         return LinearLayout(hostActivity).apply {
@@ -595,7 +599,12 @@ class CustomMediaPickerDialog(
             gravity = Gravity.CENTER_VERTICAL
             setBackgroundColor(config.theme.surfaceColor)
             elevation = 4 * density
-            setPadding((16 * density).roundToInt(), (10 * density).roundToInt(), (16 * density).roundToInt(), (10 * density).roundToInt())
+            setPadding(
+                (16 * density).roundToInt(),
+                (10 * density).roundToInt(),
+                (16 * density).roundToInt(),
+                (10 * density).roundToInt()
+            )
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -614,7 +623,12 @@ class CustomMediaPickerDialog(
                 textSize = 13f
                 typeface = Typeface.DEFAULT_BOLD
                 setTextColor(config.theme.primaryColor)
-                setPadding((12 * density).roundToInt(), (4 * density).roundToInt(), 0, (4 * density).roundToInt())
+                setPadding(
+                    (12 * density).roundToInt(),
+                    (4 * density).roundToInt(),
+                    0,
+                    (4 * density).roundToInt()
+                )
                 setOnClickListener { onManageLimitedPermission() }
             })
         }
@@ -634,7 +648,12 @@ class CustomMediaPickerDialog(
         val bar = FrameLayout(hostActivity).apply {
             clipChildren = false
             clipToPadding = false
-            setPadding((14 * density).roundToInt(), (12 * density).roundToInt(), (14 * density).roundToInt(), (14 * density).roundToInt())
+            setPadding(
+                (14 * density).roundToInt(),
+                (12 * density).roundToInt(),
+                (14 * density).roundToInt(),
+                (14 * density).roundToInt()
+            )
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -649,7 +668,8 @@ class CustomMediaPickerDialog(
         val backBtn = FrameLayout(hostActivity).apply {
             elevation = elevationPx
             background = makeFloatingSurfaceDrawable(density, isOval = true)
-            layoutParams = FrameLayout.LayoutParams(btnSize, btnSize, Gravity.START or Gravity.CENTER_VERTICAL)
+            layoutParams =
+                FrameLayout.LayoutParams(btnSize, btnSize, Gravity.START or Gravity.CENTER_VERTICAL)
             addView(ImageView(hostActivity).apply {
                 setImageResource(R.drawable.xh_ic_arrow_back)
                 setColorFilter(config.theme.iconColor, PorterDuff.Mode.SRC_IN)
@@ -704,7 +724,11 @@ class CustomMediaPickerDialog(
             val moreBtn = FrameLayout(hostActivity).apply {
                 elevation = elevationPx
                 background = makeFloatingSurfaceDrawable(density, isOval = true)
-                layoutParams = FrameLayout.LayoutParams(btnSize, btnSize, Gravity.END or Gravity.CENTER_VERTICAL)
+                layoutParams = FrameLayout.LayoutParams(
+                    btnSize,
+                    btnSize,
+                    Gravity.END or Gravity.CENTER_VERTICAL
+                )
                 addView(ImageView(hostActivity).apply {
                     setImageResource(R.drawable.xh_ic_more_vert)
                     setColorFilter(config.theme.iconColor, PorterDuff.Mode.SRC_IN)
@@ -782,7 +806,8 @@ class CustomMediaPickerDialog(
                 text = album.name
                 textSize = 15f
                 setTextColor(config.theme.textColor)
-                typeface = if (album.id == currentAlbumId) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                typeface =
+                    if (album.id == currentAlbumId) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
                 maxLines = 1
                 ellipsize = TextUtils.TruncateAt.END
                 layoutParams = LinearLayout.LayoutParams(
@@ -831,8 +856,13 @@ class CustomMediaPickerDialog(
             setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         }
         activePopup = popup
-        popup.showAsDropDown(anchor, -(screenWidthPx * 0.14f).roundToInt(), (6 * density).roundToInt())
-        card.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(160).setInterpolator(DecelerateInterpolator()).start()
+        popup.showAsDropDown(
+            anchor,
+            -(screenWidthPx * 0.14f).roundToInt(),
+            (6 * density).roundToInt()
+        )
+        card.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(160)
+            .setInterpolator(DecelerateInterpolator()).start()
     }
 
     private fun showOverflowMenu(anchor: View) {
@@ -841,7 +871,12 @@ class CustomMediaPickerDialog(
 
         val card = LinearLayout(hostActivity).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding((14 * density).roundToInt(), (8 * density).roundToInt(), (16 * density).roundToInt(), (8 * density).roundToInt())
+            setPadding(
+                (14 * density).roundToInt(),
+                (8 * density).roundToInt(),
+                (16 * density).roundToInt(),
+                (8 * density).roundToInt()
+            )
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = 16 * density
@@ -856,7 +891,12 @@ class CustomMediaPickerDialog(
         val itemRow = LinearLayout(hostActivity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding((4 * density).roundToInt(), (10 * density).roundToInt(), (4 * density).roundToInt(), (10 * density).roundToInt())
+            setPadding(
+                (4 * density).roundToInt(),
+                (10 * density).roundToInt(),
+                (4 * density).roundToInt(),
+                (10 * density).roundToInt()
+            )
             setOnClickListener {
                 activePopup?.dismiss()
                 deliveredResult = true
@@ -888,7 +928,8 @@ class CustomMediaPickerDialog(
         }
         activePopup = popup
         popup.showAsDropDown(anchor, -(popupWidth - anchor.width), (6 * density).roundToInt())
-        card.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(160).setInterpolator(DecelerateInterpolator()).start()
+        card.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(160)
+            .setInterpolator(DecelerateInterpolator()).start()
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -897,7 +938,12 @@ class CustomMediaPickerDialog(
             textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(config.theme.dateBubbleTextColor)
-            setPadding((14 * density).roundToInt(), (8 * density).roundToInt(), (14 * density).roundToInt(), (8 * density).roundToInt())
+            setPadding(
+                (14 * density).roundToInt(),
+                (8 * density).roundToInt(),
+                (14 * density).roundToInt(),
+                (8 * density).roundToInt()
+            )
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = 18 * density
@@ -922,10 +968,11 @@ class CustomMediaPickerDialog(
             background = makeFloatingSurfaceDrawable(density, isOval = true)
             elevation = 6 * density
             visibility = View.GONE
-            layoutParams = FrameLayout.LayoutParams(thumbSize, thumbSize, Gravity.TOP or Gravity.END).apply {
-                marginEnd = (6 * density).roundToInt()
-                topMargin = (72 * density).roundToInt()
-            }
+            layoutParams =
+                FrameLayout.LayoutParams(thumbSize, thumbSize, Gravity.TOP or Gravity.END).apply {
+                    marginEnd = (6 * density).roundToInt()
+                    topMargin = (72 * density).roundToInt()
+                }
             addView(ImageView(hostActivity).apply {
                 setImageResource(R.drawable.xh_ic_fast_scroll)
                 setColorFilter(config.theme.iconColor, PorterDuff.Mode.SRC_IN)
@@ -936,14 +983,16 @@ class CustomMediaPickerDialog(
 
         fastScrollThumb.setOnTouchListener { _, event ->
             val trackTop = (72 * density) + statusBarHeightPx
-            val trackBottom = (parent.height - 96 * density - navBarHeightPx).coerceAtLeast(trackTop + 1f)
+            val trackBottom =
+                (parent.height - 96 * density - navBarHeightPx).coerceAtLeast(trackTop + 1f)
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
                     val parentLoc = IntArray(2)
                     parent.getLocationOnScreen(parentLoc)
                     val localY = (event.rawY - parentLoc[1]).coerceIn(trackTop, trackBottom)
                     val fraction = ((localY - trackTop) / (trackBottom - trackTop)).coerceIn(0f, 1f)
-                    val targetPos = (fraction * (gridAdapter.itemCount - 1).coerceAtLeast(0)).roundToInt()
+                    val targetPos =
+                        (fraction * (gridAdapter.itemCount - 1).coerceAtLeast(0)).roundToInt()
                     recyclerView.scrollToPosition(targetPos)
                     updateFastScrollPosition(fraction, showBubble = true)
                     true
@@ -963,13 +1012,20 @@ class CustomMediaPickerDialog(
     private fun attachScrollListeners() {
         recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
-                val range = (rv.computeVerticalScrollRange() - rv.computeVerticalScrollExtent()).coerceAtLeast(1)
+                val range =
+                    (rv.computeVerticalScrollRange() - rv.computeVerticalScrollExtent()).coerceAtLeast(
+                        1
+                    )
                 val offset = rv.computeVerticalScrollOffset()
                 val fraction = (offset.toFloat() / range.toFloat()).coerceIn(0f, 1f)
-                val showThumb = currentItems.size > config.crossAxisCount * 5 && currentSheetOffsetY <= 2f
+                val showThumb =
+                    currentItems.size > config.crossAxisCount * 5 && currentSheetOffsetY <= 2f
                 fastScrollThumb.visibility = if (showThumb) View.VISIBLE else View.GONE
                 if (showThumb) {
-                    updateFastScrollPosition(fraction, showBubble = rv.scrollState != RecyclerView.SCROLL_STATE_IDLE)
+                    updateFastScrollPosition(
+                        fraction,
+                        showBubble = rv.scrollState != RecyclerView.SCROLL_STATE_IDLE
+                    )
                 }
             }
 
@@ -985,14 +1041,18 @@ class CustomMediaPickerDialog(
         val density = hostActivity.resources.displayMetrics.density
         val parentHeight = (fastScrollThumb.parent as? View)?.height ?: return
         val trackTop = 72 * density + statusBarHeightPx
-        val trackBottom = (parentHeight - 104 * density - navBarHeightPx).coerceAtLeast(trackTop + 1f)
+        val trackBottom =
+            (parentHeight - 104 * density - navBarHeightPx).coerceAtLeast(trackTop + 1f)
         val y = trackTop + fraction * (trackBottom - trackTop)
         fastScrollThumb.translationY = y - (72 * density)
         dateBubbleView.translationY = y - (72 * density)
 
         val lm = recyclerView.layoutManager as? GridLayoutManager ?: return
         val firstVisible = lm.findFirstVisibleItemPosition().coerceAtLeast(0)
-        val itemIndex = adapterPositionToItemIndex(firstVisible).coerceIn(0, (currentItems.size - 1).coerceAtLeast(0))
+        val itemIndex = adapterPositionToItemIndex(firstVisible).coerceIn(
+            0,
+            (currentItems.size - 1).coerceAtLeast(0)
+        )
         val item = currentItems.getOrNull(itemIndex)
         if (showBubble && item != null) {
             val label = MediaStoreRepository.formatMonthYear(item.dateAddedSec)
@@ -1016,7 +1076,12 @@ class CustomMediaPickerDialog(
         val bar = FrameLayout(hostActivity).apply {
             setBackgroundColor(config.theme.surfaceColor)
             elevation = 10 * density
-            setPadding((16 * density).roundToInt(), (12 * density).roundToInt(), (16 * density).roundToInt(), (16 * density).roundToInt())
+            setPadding(
+                (16 * density).roundToInt(),
+                (12 * density).roundToInt(),
+                (16 * density).roundToInt(),
+                (16 * density).roundToInt()
+            )
             visibility = View.GONE
             alpha = 0f
             translationY = 48 * density
@@ -1032,7 +1097,12 @@ class CustomMediaPickerDialog(
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(config.theme.onPrimaryColor)
             gravity = Gravity.CENTER
-            setPadding((22 * density).roundToInt(), (10 * density).roundToInt(), (22 * density).roundToInt(), (10 * density).roundToInt())
+            setPadding(
+                (22 * density).roundToInt(),
+                (10 * density).roundToInt(),
+                (22 * density).roundToInt(),
+                (10 * density).roundToInt()
+            )
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = 22 * density
@@ -1081,7 +1151,12 @@ class CustomMediaPickerDialog(
             textSize = 15f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(config.theme.onPrimaryColor)
-            setPadding((22 * density).roundToInt(), (11 * density).roundToInt(), (22 * density).roundToInt(), (11 * density).roundToInt())
+            setPadding(
+                (22 * density).roundToInt(),
+                (11 * density).roundToInt(),
+                (22 * density).roundToInt(),
+                (11 * density).roundToInt()
+            )
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = 22 * density
@@ -1110,12 +1185,16 @@ class CustomMediaPickerDialog(
 
     private fun loadMediaAsync() {
         thread {
-            val (loadedAlbums, loadedMap) = repository.loadMediaAndAlbums(config.mediaType, config.strings)
+            val (loadedAlbums, loadedMap) = repository.loadMediaAndAlbums(
+                config.mediaType,
+                config.strings
+            )
             mainHandler.post {
                 if (!isShowing) return@post
                 albums = loadedAlbums
                 itemsByAlbum = loadedMap
-                val targetAlbum = albums.firstOrNull { it.id == currentAlbumId } ?: albums.firstOrNull()
+                val targetAlbum =
+                    albums.firstOrNull { it.id == currentAlbumId } ?: albums.firstOrNull()
                 if (targetAlbum != null) {
                     selectAlbum(targetAlbum)
                 } else {
@@ -1282,14 +1361,23 @@ class CustomMediaPickerDialog(
             durationView.apply {
                 textSize = 11f
                 setTextColor(Color.WHITE)
-                setPadding((6 * density).roundToInt(), (2 * density).roundToInt(), (6 * density).roundToInt(), (2 * density).roundToInt())
+                setPadding(
+                    (6 * density).roundToInt(),
+                    (2 * density).roundToInt(),
+                    (6 * density).roundToInt(),
+                    (2 * density).roundToInt()
+                )
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.RECTANGLE
                     cornerRadius = 6 * density
                     setColor(0x88000000.toInt())
                 }
                 visibility = View.GONE
-                layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.START).apply {
+                layoutParams = LayoutParams(
+                    LayoutParams.WRAP_CONTENT,
+                    LayoutParams.WRAP_CONTENT,
+                    Gravity.BOTTOM or Gravity.START
+                ).apply {
                     marginStart = (5 * density).roundToInt()
                     bottomMargin = (5 * density).roundToInt()
                 }
@@ -1305,10 +1393,11 @@ class CustomMediaPickerDialog(
                     onBadgeClicked(item)
                 }
             }
-            badgeCircle.layoutParams = LayoutParams(badgeSize, badgeSize, Gravity.TOP or Gravity.END).apply {
-                topMargin = (6 * density).roundToInt()
-                marginEnd = (6 * density).roundToInt()
-            }
+            badgeCircle.layoutParams =
+                LayoutParams(badgeSize, badgeSize, Gravity.TOP or Gravity.END).apply {
+                    topMargin = (6 * density).roundToInt()
+                    marginEnd = (6 * density).roundToInt()
+                }
             badgeNumber.apply {
                 textSize = 12f
                 typeface = Typeface.DEFAULT_BOLD
@@ -1345,7 +1434,11 @@ class CustomMediaPickerDialog(
             if (itemChanged) {
                 imageView.setImageBitmap(null)
                 val targetId = item.id
-                repository.loadThumbnail(item.uri, (cellSizePx * 1.5f).roundToInt(), item.isVideo) { bmp ->
+                repository.loadThumbnail(
+                    item.uri,
+                    (cellSizePx * 1.5f).roundToInt(),
+                    item.isVideo
+                ) { bmp ->
                     mainHandler.post {
                         if (boundItem?.id == targetId && bmp != null) {
                             imageView.setImageBitmap(bmp)
@@ -1366,7 +1459,7 @@ class CustomMediaPickerDialog(
             val item = boundItem ?: return
             val selIdx = selectedItems.indexOfFirst { it.id == item.id }
             val isLimitDisabled = config.multiple && config.maxFiles != null &&
-                selectedItems.size >= config.maxFiles && selIdx < 0
+                    selectedItems.size >= config.maxFiles && selIdx < 0
 
             // Visually dim unselected tiles when maxFiles is reached (zero flicker).
             // 达到最大选择数量时，对未选中项叠加柔和禁用态透明效果（就地更新零闪烁）。
@@ -1392,7 +1485,10 @@ class CustomMediaPickerDialog(
                 badgeCircle.background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
                     setColor(config.theme.unselectedBadgeFillColor)
-                    setStroke((1.8f * density).roundToInt(), config.theme.unselectedBadgeBorderColor)
+                    setStroke(
+                        (1.8f * density).roundToInt(),
+                        config.theme.unselectedBadgeBorderColor
+                    )
                 }
             }
         }
@@ -1443,7 +1539,8 @@ class CustomMediaPickerDialog(
             } else if (holder is CellViewHolder) {
                 val itemIdx = adapterPositionToItemIndex(position)
                 val item = currentItems.getOrNull(itemIdx)
-                val col = (if (hasHeroCameraHeader()) position - 1 else position) % config.crossAxisCount
+                val col =
+                    (if (hasHeroCameraHeader()) position - 1 else position) % config.crossAxisCount
                 val lp = holder.tileView.layoutParams as RecyclerView.LayoutParams
                 lp.marginEnd = if (col < config.crossAxisCount - 1) spacingPx else 0
                 holder.tileView.layoutParams = lp
@@ -1488,9 +1585,11 @@ class CustomMediaPickerDialog(
                 }
                 for (c in 0 until rightCols) {
                     val tile = MediaTileView(hostActivity).apply {
-                        layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
-                            if (c < rightCols - 1) marginEnd = spacingPx
-                        }
+                        layoutParams =
+                            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
+                                .apply {
+                                    if (c < rightCols - 1) marginEnd = spacingPx
+                                }
                     }
                     rightTiles.add(tile)
                     rowLayout.addView(tile)

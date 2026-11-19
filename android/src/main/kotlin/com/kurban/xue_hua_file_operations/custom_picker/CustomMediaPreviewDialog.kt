@@ -160,7 +160,8 @@ class CustomMediaPreviewDialog(
                 setColor(0x52000000)
                 setStroke(dp(1), 0x26FFFFFF)
             }
-            layoutParams = FrameLayout.LayoutParams(dp(40), dp(40), Gravity.START or Gravity.CENTER_VERTICAL)
+            layoutParams =
+                FrameLayout.LayoutParams(dp(40), dp(40), Gravity.START or Gravity.CENTER_VERTICAL)
             addView(ImageView(context).apply {
                 setImageResource(R.drawable.xh_ic_arrow_back)
                 setColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN)
@@ -190,7 +191,8 @@ class CustomMediaPreviewDialog(
         topRow.addView(counterView)
 
         val badgeHitArea = FrameLayout(context).apply {
-            layoutParams = FrameLayout.LayoutParams(dp(44), dp(44), Gravity.END or Gravity.CENTER_VERTICAL)
+            layoutParams =
+                FrameLayout.LayoutParams(dp(44), dp(44), Gravity.END or Gravity.CENTER_VERTICAL)
             setOnClickListener {
                 val item = items.getOrNull(currentIndex) ?: return@setOnClickListener
                 if (onToggleSelection(item)) {
@@ -449,7 +451,8 @@ class CustomMediaPreviewDialog(
         }
 
         val count = selectedItems.size
-        confirmButton.text = if (count > 0) "${config.strings.done} ($count)" else config.strings.done
+        confirmButton.text =
+            if (count > 0) "${config.strings.done} ($count)" else config.strings.done
         confirmButton.alpha = if (count > 0 || !config.multiple) 1f else 0.78f
 
         // Selected thumbnail strip in multi-select mode / 多选模式底部已选缩略图条
@@ -540,7 +543,11 @@ class CustomMediaPreviewDialog(
             if (idChanged) {
                 boundId = item.id
                 imageView.setImageBitmap(null)
-                repository.loadThumbnail(item.uri, (120 * density).roundToInt(), item.isVideo) { bmp ->
+                repository.loadThumbnail(
+                    item.uri,
+                    (120 * density).roundToInt(),
+                    item.isVideo
+                ) { bmp ->
                     mainHandler.post {
                         if (boundId == item.id && bmp != null) {
                             imageView.setImageBitmap(bmp)
@@ -737,7 +744,8 @@ class CustomMediaPreviewDialog(
             currentScale = 1f
             translateX = 0f
             translateY = 0f
-            animate().scaleX(1f).scaleY(1f).translationX(0f).translationY(0f).setDuration(160).start()
+            animate().scaleX(1f).scaleY(1f).translationX(0f).translationY(0f).setDuration(160)
+                .start()
         }
 
         private fun applyZoomTransform() {

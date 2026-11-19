@@ -407,7 +407,9 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
                             return
                         } catch {
                             lock.lock()
-                            if firstError == nil { firstError = error }
+                            if firstError == nil {
+                                firstError = error
+                            }
                             lock.unlock()
                             return
                         }
@@ -495,7 +497,7 @@ public class XueHuaFileOperationsPlugin: NSObject, FlutterPlugin, UIDocumentPick
 
         let hasPath = path != nil && !(path!.isEmpty)
         let hasIdentifier = identifier != nil && !(identifier!.isEmpty)
-        if !hasPath && !hasIdentifier {
+        if !hasPath, !hasIdentifier {
             result(FlutterError(
                 code: "invalid_args",
                 message: "Either path or identifier must be provided",
