@@ -19,6 +19,7 @@ import android.hardware.camera2.params.SessionConfiguration
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
+import android.util.AttributeSet
 import android.util.Size
 import android.view.Gravity
 import android.view.Surface
@@ -37,14 +38,16 @@ import com.kurban.xue_hua_file_operations.R
  * 渲染在媒体网格左上角 1×2 位置的实时后置相机预览格。
  * 当未授予相机权限或设备无摄像头时，自动优雅降级为带矢量图标的静态深色拍照入口。
  */
-class CameraPreviewTileView(
+class CameraPreviewTileView @JvmOverloads constructor(
     context: Context,
-    private val cameraLabel: String,
-) : FrameLayout(context) {
+    attrs: AttributeSet? = null,
+    defStyleAttr: Int = 0,
+) : FrameLayout(context, attrs, defStyleAttr) {
 
     private val textureView = TextureView(context)
     private val badgeContainer = FrameLayout(context)
     private val fallbackContainer = LinearLayout(context)
+    private val fallbackLabelView = TextView(context)
 
     private var cameraThread: HandlerThread? = null
     private var cameraHandler: Handler? = null
@@ -81,8 +84,7 @@ class CameraPreviewTileView(
                 val iconPx = (30 * density).toInt()
                 layoutParams = LinearLayout.LayoutParams(iconPx, iconPx)
             })
-            addView(TextView(context).apply {
-                text = cameraLabel
+            fallbackLabelView.apply {
                 setTextColor(Color.WHITE)
                 textSize = 13f
                 gravity = Gravity.CENTER
@@ -92,7 +94,8 @@ class CameraPreviewTileView(
                 ).apply {
                     topMargin = (6 * density).toInt()
                 }
-            })
+            }
+            addView(fallbackLabelView)
         }
         addView(fallbackContainer)
 
@@ -145,6 +148,14 @@ class CameraPreviewTileView(
 
             override fun onSurfaceTextureUpdated(surface: SurfaceTexture) = Unit
         }
+    }
+
+    /**
+     * Sets the localized fallback label displayed beneath the camera icon.
+     * 设置降级状态下显示在相机图标下方的本地化文案。
+     */
+    fun setCameraLabel(label: String) {
+        fallbackLabelView.text = label
     }
 
     /**

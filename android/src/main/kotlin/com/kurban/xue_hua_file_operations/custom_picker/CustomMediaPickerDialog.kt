@@ -1188,10 +1188,12 @@ class CustomMediaPickerDialog(
      * a 2-row media mini-grid on the right, matching the staggered grid layout.
      * 首行复合容器：左侧为跨 2 行的实时相机预览格，右侧为 2 行媒体缩略图网格。
      */
-    private inner class HeroViewHolder(private val root: LinearLayout) :
+    private inner class HeroViewHolder(root: LinearLayout) :
         RecyclerView.ViewHolder(root) {
 
-        private val cameraTile = CameraPreviewTileView(hostActivity, config.strings.cameraLabel)
+        private val cameraTile = CameraPreviewTileView(hostActivity).apply {
+            setCameraLabel(config.strings.cameraLabel)
+        }
         private val rightColumn = LinearLayout(hostActivity).apply {
             orientation = LinearLayout.VERTICAL
         }
@@ -1247,6 +1249,6 @@ class CustomMediaPickerDialog(
         }
     }
 
-    private inner class CellViewHolder(val container: FrameLayout) :
+    private class CellViewHolder(val container: FrameLayout) :
         RecyclerView.ViewHolder(container)
 }
